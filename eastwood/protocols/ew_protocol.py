@@ -75,17 +75,11 @@ class EWProtocol(BaseProtocol):
 
 		# Stop compressor and decompressor
 		for x in self.compressors:
-			x.terminate()
+			x.kill()
 
 		for x in self.depressors:
-			x.terminate()
+			x.kill()
 
-		try:
-			self.compression_handler.kill()
-			self.decompression_handler.kill()
-		except:
-			pass
-	
 		# Stop handlers
 		self.compression_handler.running = False
 		self.decompression_handler.running = False
