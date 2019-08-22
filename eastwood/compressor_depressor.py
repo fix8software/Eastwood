@@ -23,7 +23,7 @@ class OutboxHandlerThread(Thread):
 	def __init__(self, queue, callback, *args, **kwargs):
 		"""
 		Args:
-			queue: outbox queue to handle data from
+			queue: outbox queue to handle data from (accepts tuple of index, data)
 			callback: callback to run after handling data
 			*args: args to prepend to callback
 			**kwargs: kwargs to append to callback
@@ -38,16 +38,39 @@ class OutboxHandlerThread(Thread):
 		self.daemon = True
 		self.running = True # Controls the loop
 		self.queue = queue # Outbound queue
+		self.wait_list = {} # Packets waiting for other packets to process
+		self.index = 0 # Current index (index of last packet processed)
 
 	def run(self):
 		while self.running:
 			try:
-				data = self.queue.get(timeout=1)
+				packet_tuple = self.queue.get(timeout=1)
 			except Empty:
 				continue
 
-			self.run_callback(data)
-			self.queue.task_done()
+			if packet_tuple[0] != self.index:
+				# Packet is supposed to be sent after one being processed
+				self.wait_list[packet_tuple[0]] = packet_tuple
+				return
+
+			# Packet is next to be sent
+			if packet_tuple[1]:
+				self.run_callback(packet_tuple[1]) # Send it
+			self.index += 1 # Increment index
+
+			# Send packets that were waiting for this packet
+			while True:
+				try:
+					patient = self.wait_list[self.index]
+				except KeyError:
+					break # Packet is still being processed, wait for next get
+
+				# Save Our Ram
+				del self.wait_list[self.index]
+
+				if patient[1]:
+					self.run_callback(patient[1]) # Send it
+				self.index += 1 # Increment index
 
 	def run_callback(self, *args, **kwargs):
 		"""
@@ -62,7 +85,7 @@ class BaseCompressionProcess(Process):
 	def __init__(self, input_queue, output_queue):
 		"""
 		Args:
-			input_queue: queue to use for input
+			input_queue: queue to use for input (accepts tuple of index, data)
 			output_queue: queue to output to
 		"""
 		super().__init__()
@@ -76,14 +99,12 @@ class BaseCompressionProcess(Process):
 	def run(self):
 		while True:
 			try:
-				data = self.input_queue.get(timeout=1)
+				packet_tuple = self.input_queue.get(timeout=1)
 			except Empty:
 				continue
 
-			modified_data = self.handle_data(data)
-			if modified_data:
-				self.output_queue.put_nowait(modified_data)
-			self.input_queue.task_done()
+			new_data = self.handle_data(packet_tuple[1])
+			self.output_queue.put_nowait((packet_tuple[0], new_data))
 
 	def handle_data(self, data):
 		"""
@@ -96,7 +117,7 @@ class Compressor(BaseCompressionProcess):
 	def __init__(self, input_queue, output_queue):
 		"""
 		Args:
-			input_queue: queue to use for input
+			input_queue: queue to use for input (accepts tuple of index, data)
 			output_queue: queue to output to
 		"""
 		super().__init__(input_queue, output_queue)
@@ -114,7 +135,7 @@ class Depressor(BaseCompressionProcess):
 	def __init__(self, input_queue, output_queue):
 		"""
 		Args:
-			input_queue: queue to use for input
+			input_queue: queue to use for input (accepts tuple of index, data)
 			output_queue: queue to output to
 		"""
 		super().__init__(input_queue, output_queue)
@@ -124,17 +145,17 @@ class Depressor(BaseCompressionProcess):
 
 	def handle_data(self, data):
 		# LZMA uncompress data
-		try:
-			uncompressed_data = self.decompressor.decompress(data)
-		except lzma.LZMAError:
-			self.logger.warn("Failed to lzma decompress packet!")
-			return # Ignore packet
+		uncompressed_data = b""
+		while True:
+			try:
+				uncompressed_data += self.decompressor.decompress(data)
+			except lzma.LZMAError:
+				self.logger.warn("Failed to lzma decompress packet!")
+				return
 
-		if self.decompressor.eof: # eof is reached, create a new decompressor
-			unused_data = self.decompressor.unused_data # reuse old data in another call
-			self.decompressor = self.decompressor_rcyl() # New decompressor
-			self.output_queue.put_nowait(uncompressed_data) # Release already uncompressed data
-			self.handle_data(unused_data) # Now uncompress unused data
-			return
+			if self.decompressor.eof: # eof is reached, create a new decompressor
+				data = self.decompressor.unused_data # reuse old data in another call
+				self.decompressor = self.decompressor_rcyl() # New decompressor
+				continue # Now uncompress unused data
 
-		return uncompressed_data
+			return uncompressed_data # Returned already decompressed data

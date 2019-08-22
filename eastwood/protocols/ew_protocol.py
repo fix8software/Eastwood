@@ -1,5 +1,5 @@
 from collections import deque
-from multiprocessing import JoinableQueue
+from multiprocessing import Queue
 from quarry.net.protocol import BufferUnderrun
 from twisted.internet import reactor
 
@@ -26,12 +26,14 @@ class EWProtocol(BaseProtocol):
 		super().__init__(factory, buff_class, handle_direction, other_factory)
 		self.buffer_wait = buffer_wait
 
-		self.compressor_input_queue = JoinableQueue()
-		self.compressor_output_queue = JoinableQueue()
-		self.depressor_input_queue = JoinableQueue()
-		self.depressor_output_queue = JoinableQueue()
+		self.compressor_input_queue = Queue()
+		self.compressor_output_queue = Queue()
+		self.depressor_input_queue = Queue()
+		self.depressor_output_queue = Queue()
 
+		self.compression_index = 0 # Index for packet order
 		self.compression_handler = OutboxHandlerThread(self.compressor_output_queue, reactor.callFromThread, self.send_data)
+		self.depression_index = 0 # Index for packet order
 		self.decompression_handler = OutboxHandlerThread(self.depressor_output_queue, reactor.callFromThread, super().dataReceived)
 
 		self.compressors = []
@@ -90,7 +92,8 @@ class EWProtocol(BaseProtocol):
 		"""
 		Called by twisted when data is received over tcp by the protocol
 		"""
-		self.depressor_input_queue.put_nowait(data)
+		self.depressor_input_queue.put_nowait((self.depression_index, data))
+		self.depression_index += 1 # Increment index
 
 	def get_packet_name(self, id):
 		"""
@@ -142,7 +145,8 @@ class EWProtocol(BaseProtocol):
 		data = self.buff_class.pack_varint(self.get_packet_id(name)) + data # Prepend packet ID
 		data = self.buff_class.pack_packet(data) # Pack data as a packet
 
-		self.compressor_input_queue.put_nowait(data)
+		self.compressor_input_queue.put_nowait((self.compression_index, data))
+		self.compression_index += 1 # Increment index
 
 	def send_data(self, data):
 		"""
