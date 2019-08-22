@@ -63,7 +63,7 @@ class OutboxHandlerThread(Thread):
 				try:
 					patient = self.wait_list[self.index]
 				except KeyError:
-					return # Packet is still being processed, wait for next get
+					break # Packet is still being processed, wait for next get
 
 				# Save Our Ram
 				del self.wait_list[self.index]
