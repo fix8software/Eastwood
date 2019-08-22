@@ -8,7 +8,7 @@ from eastwood.protocols.base_protocol import BaseFactory, BaseProtocol
 from eastwood.ew_packet import packet_ids, packet_names
 
 # A bunch of variables that haven't become arguments.
-COMP_THREADS = 4
+COMP_THREADS = 1
 DEP_THREADS = 1
 
 class EWProtocol(BaseProtocol):
