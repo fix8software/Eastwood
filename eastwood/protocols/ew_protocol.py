@@ -32,9 +32,9 @@ class EWProtocol(BaseProtocol):
 		self.depressor_output_queue = Queue()
 
 		self.compression_index = 0 # Index for packet order
-		self.compression_handler = OutboxHandlerThread(self.compressor_output_queue, reactor.callFromThread, self.send_data)
+		self.compression_handler = OutboxHandlerThread(self.compressor_output_queue, reactor.callFromThread, self.send_packet, "poem")
 		self.depression_index = 0 # Index for packet order
-		self.decompression_handler = OutboxHandlerThread(self.depressor_output_queue, reactor.callFromThread, super().dataReceived)
+		self.decompression_handler = OutboxHandlerThread(self.depressor_output_queue, reactor.callFromThread, self.parse_packet_poem)
 
 		self.compressors = []
 		for x in range(COMP_THREADS):
@@ -88,13 +88,6 @@ class EWProtocol(BaseProtocol):
 		self.compression_handler.join()
 		self.decompression_handler.join()
 
-	def dataReceived(self, data):
-		"""
-		Called by twisted when data is received over tcp by the protocol
-		"""
-		self.depressor_input_queue.put_nowait((self.depression_index, data))
-		self.depression_index += 1 # Increment index
-
 	def get_packet_name(self, id):
 		"""
 		Get packet name from id
@@ -137,23 +130,6 @@ class EWProtocol(BaseProtocol):
 
 		return info[0]
 
-	def send_packet(self, name, *data):
-		"""
-		Sends a ew packet to the other proxy
-		"""
-		data = b"".join(data) # Combine data
-		data = self.buff_class.pack_varint(self.get_packet_id(name)) + data # Prepend packet ID
-		data = self.buff_class.pack_packet(data) # Pack data as a packet
-
-		self.compressor_input_queue.put_nowait((self.compression_index, data))
-		self.compression_index += 1 # Increment index
-
-	def send_data(self, data):
-		"""
-		Callback for compressor
-		"""
-		self.transport.write(data)
-
 	def send_buffered_packets(self):
 		"""
 		Sends all packets in self.input_buffer to the other proxy as a poem
@@ -176,14 +152,25 @@ class EWProtocol(BaseProtocol):
 
 			packet_data.discard() # Buffer is no longer needed
 
-		# Send poem
-		self.send_packet("poem", *data)
+		# Compress poem and send
+		self.compressor_input_queue.put_nowait((self.compression_index, b"".join(data)))
+		self.compression_index += 1 # Increment index
 
 	def packet_poem(self, buff):
+		"""
+		Uncompresses poem packet data
+		"""
+		# Decompress data
+		self.depressor_input_queue.put_nowait((self.depression_index, buff.read()))
+		self.depression_index += 1 # Increment index
+
+	def parse_packet_poem(self, uncompressed_data):
 		"""
 		Parses the poem and dispatches callouts with packet_mc_* callbacks
 		Also forwards the packets afterwards
 		"""
+		buff = self.buff_class(uncompressed_data) # Create buffer
+
 		data = []
 		try:
 			while True: # Unpack data until a bufferunderrun
