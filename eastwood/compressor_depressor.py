@@ -112,6 +112,11 @@ class CompressorDepressor(Thread):
 			except Empty:
 				continue
 
-			new_data = self.handle_func(packet_tuple[1])
+			try: # Ignore packet if there are *any* errors
+				new_data = self.handle_func(packet_tuple[1])
+			except:
+				self.logger.warn("Packet Index #{} thrown out!".format(packet_tuple[0]))
+				new_data = None
+
 			self.output_queue.put_nowait((packet_tuple[0], new_data))
 			self.input_queue.task_done()
