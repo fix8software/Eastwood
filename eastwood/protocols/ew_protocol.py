@@ -1,9 +1,9 @@
 from collections import deque
-from multiprocessing import Queue
 from quarry.net.protocol import BufferUnderrun
+from queue import Queue
 from twisted.internet import reactor
 
-from eastwood.compressor_depressor import Compressor, Depressor, OutboxHandlerThread
+from eastwood.compressor_depressor import CompressorDepressor, OutboxHandlerThread
 from eastwood.protocols.base_protocol import BaseFactory, BaseProtocol
 from eastwood.ew_packet import packet_ids, packet_names
 
@@ -38,11 +38,11 @@ class EWProtocol(BaseProtocol):
 
 		self.compressors = []
 		for x in range(COMP_THREADS):
-			self.compressors.append(Compressor(self.compressor_input_queue, self.compressor_output_queue))
+			self.compressors.append(CompressorDepressor(self.compressor_input_queue, self.compressor_output_queue, "compress"))
 
 		self.depressors = []
 		for x in range(DEP_THREADS):
-			self.depressors.append(Depressor(self.depressor_input_queue, self.depressor_output_queue))
+			self.depressors.append(CompressorDepressor(self.depressor_input_queue, self.depressor_output_queue, "decompress"))
 
 	def connectionMade(self):
 		"""
@@ -77,10 +77,12 @@ class EWProtocol(BaseProtocol):
 
 		# Stop compressor and decompressor
 		for x in self.compressors:
-			x.kill()
+			x.running = False
+			x.join()
 
 		for x in self.depressors:
-			x.kill()
+			x.running = False
+			x.join()
 
 		# Stop handlers
 		self.compression_handler.running = False
