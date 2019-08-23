@@ -1,6 +1,7 @@
 import logging
 from argparse import ArgumentParser
 from eastwood import external_proxy, internal_proxy
+from multiprocessing import set_start_method
 from twisted.internet import reactor
 from twisted.python import log
 
@@ -35,7 +36,10 @@ if __name__ == "__main__":
 	observer.start()
 	logging.getLogger().setLevel(args.debug)
 
-	# do_NOT_garbage_collect = []
+	# Be sure processes are forked, not spawned
+	set_start_method("fork")
+
+	# Start proxies
 	if args.type in ("internal", "both"):
 		ip, port = parse_ip_port(args.internal_proxy_ip)
 		mc_ip, mc_port = parse_ip_port(args.mc_server)
