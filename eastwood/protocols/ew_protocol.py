@@ -187,12 +187,15 @@ class EWProtocol(BaseProtocol):
 
 		# Dispatch calls
 		for uuid, packet_name, packet_data in data:
-			client = self.other_factory.get_client(uuid) # Get client
+			try:
+				client = self.other_factory.get_client(uuid) # Get client
+			except KeyError:
+				continue # The client has disconnected already, ignore
 
 			try: # Attempt to dispatch
 				new_packet = client.dispatch(("send", packet_name), packet_data)
 			except BufferUnderrun:
-				self.logger.info("Packet is too short: {}".format(packet_name))
+				client.logger.info("Packet is too short: {}".format(packet_name))
 				continue
 
 			# If nothing was returned, the packet should be sent as it was originally
@@ -201,8 +204,4 @@ class EWProtocol(BaseProtocol):
 
 			# Forward packet
 			if new_packet[1] != None: # If the buffer is none, it was explictly stated to not send the packet!
-				try:
-					client.send_packet(new_packet[0], new_packet[1].buff)
-				except KeyError:
-					# The client has disconnected already, ignore
-					pass
+				client.send_packet(new_packet[0], new_packet[1].buff)
