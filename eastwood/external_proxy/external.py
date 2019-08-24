@@ -1,13 +1,5 @@
-"""
-The proxy layer after bungeecord and before the internal proxy, runs on the vps
-Acts as a proxy to intercept, encode, and send minecraft packets to the internal proxy
-"""
-
 from quarry.net.protocol import BufferUnderrun
-from twisted.internet import reactor
-from twisted.internet.protocol import ReconnectingClientFactory
 
-from eastwood.protocols.ew_protocol import EWFactory, EWProtocol
 from eastwood.protocols.mc_protocol import MCFactory, MCProtocol
 
 class ExternalProxyBungeeCordFrontEndProtocol(MCProtocol):
@@ -107,67 +99,3 @@ class ExternalProxyBungeeCordFrontEndFactory(MCFactory):
 		self.max_connections = max_connections
 		self.num_connections = 0
 
-class ExternalProxyInternalProtocol(EWProtocol):
-	"""
-	Handles sending data as buffered "poems" from clients to the internal proxy and vice versa
-	"""
-	def packet_release_queue(self, buff):
-		"""
-		Allow client with packed uuid to send packets
-		"""
-		uuid = buff.unpack_uuid()
-		client = self.other_factory.get_client(uuid)
-
-		# Add queued packets to buffer
-		for packet_uuid, packet_name, packet_data in client.queue:
-			self.factory.input_buffer.append((uuid, packet_name, packet_data))
-
-		client.queue = None # Remove queue
-
-	def packet_mc_login_success(self, uuid, buff):
-		"""
-		Set protocol_mode to play
-		https://wiki.vg/Protocol#Handshake
-		"""
-		client = self.other_factory.get_client(uuid)
-
-		client.send_packet("login_success", buff.read()) # Send packet myself
-		client.protocol_mode = "play" # Change mode after sending to prevent an error
-
-		return (uuid, "login_success", None) # Prevent old packet from sending
-
-class ExternalProxyInternalFactory(EWFactory, ReconnectingClientFactory):
-	"""
-	Quick and dirty hack to combine the ReconnectingClientFactory with the data of EWFactory
-	"""
-	def buildProtocol(self, addr):
-		self.resetDelay() # Reset the reconnect delay
-		return ExternalProxyInternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.buffer_wait)
-
-def create(protocol_version, host, port, internal_host, internal_port, buffer_wait, max_connections):
-	"""
-	Does two things:
-	Creates an instance of ExternalProxyInternalFactory which communicates with the internal proxy
-	Creates an instance of ExternalProxyBungeeCordFrontEndFactory which communicates to the clients/bungee
-	Args:
-		protocol_version: protocol specification to use
-		host: external proxy's listening ip
-		port: external proxy's istening port
-		internal_host: internal proxy's ip
-		internal_port: internal proxy's port
-		buffer_wait: amount of time to wait before sending buffered packets (in ms)
-		max_connections: max amount of clients to accept before kicking
-	"""
-	# Create an instance of ExternalProxyInternalFactory which communicates with the internal proxy as a client
-	internal_factory = ExternalProxyInternalFactory(protocol_version, "downstream", buffer_wait)
-
-	# Creates an instance of ExternalProxyBungeeCordFrontEndFactory which communicates to the clients/bungee
-	server = ExternalProxyBungeeCordFrontEndFactory(protocol_version, "upstream", 0, max_connections)
-
-	# Assign other_factory
-	internal_factory.other_factory = server
-	server.other_factory = internal_factory
-
-	# Call reactor
-	reactor.connectTCP(internal_host, internal_port, internal_factory)
-	reactor.listenTCP(port, server, interface=host)
