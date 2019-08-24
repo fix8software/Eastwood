@@ -9,6 +9,20 @@ class InternalProxyExternalProtocol(MCProtocol):
 	"""
 	Emulated client connections to trick the server that everyone is connected on LAN
 	"""
+	def __init__(self, factory, buff_class, handle_direction, other_factory, buffer_wait, ip_forward, uuid=None):
+		"""
+		Protocol args:
+			factory: factory that made this protocol (subclass of BaseFactory)
+			buff_class: buffer class that this protocol will use
+			handle_direction: direction packets being handled by this protocol are going (can be "downstream" or "upstream")
+			other_factory: the other factory that communicates with this protocol (in this case an instance of EWProtocol)
+			protocol_version: protocol specification to use
+			ip_forward: if true, forward the true ip
+			uuid: uuid of client, don't set to autogen
+		"""
+		super().__init__(factory, buff_class, handle_direction, other_factory, buffer_wait, uuid=uuid)
+		self.ip_forward = ip_forward
+
 	def connectionMade(self):
 		super().connectionMade()
 
@@ -39,8 +53,7 @@ class InternalProxyExternalProtocol(MCProtocol):
 		new_data = buff.pack_varint(protocol_version)
 
 		# Only fake the ip if we are using bungeecord
-		# TODO: Move ip_forward to external portion of the proxy
-		if self.other_factory.ip_forward:
+		if self.ip_forward:
 			new_data += buff.pack_string(true_ip)
 			new_data += buff.pack("H", true_port)
 		else:
@@ -59,17 +72,19 @@ class InternalProxyExternalFactory(MCFactory, ClientFactory):
 	"""
 	Manages client connections and also keeps track of their identity
 	"""
-	def __init__(self, protocol_version, mc_host, mc_port, ping_factory):
+	def __init__(self, protocol_version, mc_host, mc_port, ip_forward, ping_factory):
 		"""
 		Args:
 			protocol_version: minecraft protocol specification to use
 			mc_host: minecraft server's ip
 			mc_port: minecraft server's port
+			ip_forward: if true, forward the true ip
 			ping_factory: factory to ping the mc server
 		"""
 		super().__init__(protocol_version, "downstream")
 		self.mc_host = mc_host
 		self.mc_port = mc_port
+		self.ip_forward = ip_forward
 		self.ping_factory = ping_factory
 		self.ping_factory.callback = self.on_successful_ping
 
@@ -98,6 +113,6 @@ class InternalProxyExternalFactory(MCFactory, ClientFactory):
 		# Build protocol with an unassigned uuid
 		try:
 			k = [*self.uuid_dict.keys()][[*self.uuid_dict.values()].index(None)]
-			return InternalProxyExternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.protocol_version, uuid=UUID(hex=k))
+			return InternalProxyExternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.protocol_version, self.ip_forward, uuid=UUID(hex=k))
 		except ValueError:
 			pass
