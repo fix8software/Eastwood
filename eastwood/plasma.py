@@ -13,8 +13,8 @@ import zstd as single # Used for finalizing output
 # Please note that these values must be the same for both the compressor and decompressor.
 SIZE_BYTES = 3
 BITFLAG_BYTES = 1
-BACKUP_ENABLED = False # Specifies if LZMA should be used when Bzip2 fails
-BACKUP_PRESET = 0 # Probably want to keep this at zero for performance reasons
+BACKUP_ENABLED = True # Specifies if LZMA should be used when Bzip2 fails
+BACKUP_PRESET = 4
 
 # These are pretty important in general and you shouldn't touch them at all.
 BACKUP_FILTERS = [
@@ -53,7 +53,7 @@ class ParallelCompressionInterface(object):
         for i in range(0, len(l), n):
             yield l[i:i+n]
 
-    def compress(self, input: bytes, level: int = 6, chunks: int = -1, finalize: bool = True, finalize_preset: int = 1, finalize_threshold: int = 8192) -> bytes:
+    def compress(self, input: bytes, level: int = 9, chunks: int = -1, finalize: bool = True, finalize_preset: int = 3, finalize_threshold: int = 8192) -> bytes:
         """
         Main compression function.
         Args:
