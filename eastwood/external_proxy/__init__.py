@@ -25,7 +25,7 @@ def create(protocol_version, host, port, internal_host, internal_port, buffer_wa
 	internal_factory = ExternalProxyInternalFactory(protocol_version, "downstream", buffer_wait)
 
 	# Creates an instance of ExternalProxyBungeeCordFrontEndFactory which communicates to the clients/bungee
-	server = ExternalProxyBungeeCordFrontEndFactory(protocol_version, "upstream", 0, max_connections)
+	server = ExternalProxyBungeeCordFrontEndFactory(protocol_version, "upstream", max_connections)
 
 	# Assign other_factory
 	internal_factory.other_factory = server

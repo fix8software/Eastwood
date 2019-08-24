@@ -99,4 +99,3 @@ class ExternalProxyBungeeCordFrontEndFactory(MCFactory):
 
 		self.max_connections = max_connections
 		self.num_connections = 0
-
