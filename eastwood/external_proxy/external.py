@@ -1,6 +1,7 @@
 from quarry.net.protocol import BufferUnderrun
 
-from eastwood.protocols.mc_protocol import MCFactory, MCProtocol
+from eastwood.factories.mc_factory import MCFactory
+from eastwood.protocols.mc_protocol import MCProtocol
 
 class ExternalProxyBungeeCordFrontEndProtocol(MCProtocol):
 	"""

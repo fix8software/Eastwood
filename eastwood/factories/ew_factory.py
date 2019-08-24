@@ -1,6 +1,6 @@
 from collections import deque
 
-from eastwood.protocols.base_protocol import BaseFactory
+from eastwood.factories.base_factory import BaseFactory
 from eastwood.protocols.ew_protocol import EWProtocol
 
 class EWFactory(BaseFactory):

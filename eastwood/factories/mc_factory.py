@@ -1,4 +1,4 @@
-from eastwood.protocols.base_protocol import BaseFactory
+from eastwood.factories.base_factory import BaseFactory
 from eastwood.protocols.mc_protocol import MCProtocol
 
 class MCFactory(BaseFactory):

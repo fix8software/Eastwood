@@ -1,4 +1,5 @@
-from eastwood.protocols.ew_protocol import EWFactory, EWProtocol
+from eastwood.factories.ew_factory import EWFactory
+from eastwood.protocols.ew_protocol import EWProtocol
 
 class InternalProxyInternalProtocol(EWProtocol):
 	"""
