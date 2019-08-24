@@ -1,10 +1,9 @@
-from collections import deque
 from quarry.net.protocol import BufferUnderrun
 from queue import Queue
 from twisted.internet import reactor
 
 from eastwood.compressor_depressor import CompressorDepressor, OutboxHandlerThread
-from eastwood.protocols.base_protocol import BaseFactory, BaseProtocol
+from eastwood.protocols.base_protocol import BaseProtocol
 from eastwood.ew_packet import packet_ids, packet_names
 
 # A bunch of variables that haven't become arguments.
@@ -34,7 +33,7 @@ class EWProtocol(BaseProtocol):
 		self.compression_index = 0 # Index for packet order
 		self.compression_handler = OutboxHandlerThread(self.compressor_output_queue, reactor.callFromThread, self.send_packet, "poem")
 		self.depression_index = 0 # Index for packet order
-		self.decompression_handler = OutboxHandlerThread(self.depressor_output_queue, reactor.callFromThread, self.parse_packet_poem)
+		self.decompression_handler = OutboxHandlerThread(self.depressor_output_queue, reactor.callFromThread, self.parse_packet_recv_poem)
 
 		self.compressors = []
 		for x in range(COMP_THREADS):
@@ -158,7 +157,7 @@ class EWProtocol(BaseProtocol):
 		self.compressor_input_queue.put_nowait((self.compression_index, b"".join(data)))
 		self.compression_index += 1 # Increment index
 
-	def packet_poem(self, buff):
+	def packet_recv_poem(self, buff):
 		"""
 		Uncompresses poem packet data
 		"""
@@ -166,7 +165,7 @@ class EWProtocol(BaseProtocol):
 		self.depressor_input_queue.put_nowait((self.depression_index, buff.read()))
 		self.depression_index += 1 # Increment index
 
-	def parse_packet_poem(self, uncompressed_data):
+	def parse_packet_recv_poem(self, uncompressed_data):
 		"""
 		Parses the poem and dispatches callouts with packet_mc_* callbacks
 		Also forwards the packets afterwards
@@ -187,42 +186,22 @@ class EWProtocol(BaseProtocol):
 		buff.discard() # Discard when done
 
 		# Dispatch calls
-		for packet in data:
+		for uuid, packet_name, packet_data in data:
 			try:
-				new_packet = self.dispatch(("mc", packet[1]), packet[0], packet[2])
+				client = self.other_factory.get_client(uuid) # Get client
+			except KeyError:
+				continue # The client has disconnected already, ignore
+
+			try: # Attempt to dispatch
+				new_packet = client.dispatch(("send", packet_name), packet_data)
 			except BufferUnderrun:
-				self.logger.info("Packet is too short: {}".format(packet[1]))
+				client.logger.info("Packet is too short: {}".format(packet_name))
 				continue
 
 			# If nothing was returned, the packet should be sent as it was originally
 			if not new_packet:
-				new_packet = packet
+				new_packet = (packet_name, packet_data)
 
 			# Forward packet
-			if new_packet[2] != None: # If the buffer is none, it was explictly stated to not send the packet!
-				try:
-					self.other_factory.get_client(new_packet[0]).send_packet(new_packet[1], new_packet[2].buff)
-				except KeyError:
-					# The client has disconnected already, ignore
-					pass
-
-class EWFactory(BaseFactory):
-	"""
-	Derivative of Base factory that passes required args to EWProtocol
-	"""
-	protocol=EWProtocol
-
-	def __init__(self, protocol_version, handle_direction, buffer_wait):
-		"""
-		Args:
-			protocol_version: minecraft protocol specification to use
-			handle_direction: direction packets being handled by this protocol are going (can be "clientbound" or "serverbound")
-			buffer_wait: amount of time to wait before sending buffered packets (in ms)
-		"""
-		super().__init__(protocol_version, handle_direction)
-		self.input_buffer = deque()
-		self.buffer_wait = buffer_wait
-		self.instance = None # Only one protcol can exist in EWFactory
-
-	def buildProtocol(self, addr):
-		return self.protocol(self, self.buff_class, self.handle_direction, self.other_factory, self.buffer_wait)
+			if new_packet[1] != None: # If the buffer is none, it was explictly stated to not send the packet!
+				client.send_packet(new_packet[0], new_packet[1].buff)
