@@ -66,7 +66,7 @@ class ExternalProxyExternalProtocol(MCProtocol):
 		# Append it to the buffer list
 		super().packet_received(buff, name)
 
-	def packet_handshake(self, buff):
+	def packet_recv_handshake(self, buff):
 		"""
 		Syphon protocol_mode from handshake packet
 		Only sent serverbound (handled by the external proxy)
@@ -81,6 +81,16 @@ class ExternalProxyExternalProtocol(MCProtocol):
 			self.protocol_mode = "status"
 		elif protocol_mode == 2:
 			self.protocol_mode = "login"
+
+	def packet_send_login_success(self, buff):
+		"""
+		Set protocol_mode to play
+		https://wiki.vg/Protocol#Handshake
+		"""
+		self.send_packet("login_success", buff.read()) # Send packet myself
+		self.protocol_mode = "play" # Change mode after sending to prevent an error
+
+		return ("login_success", None) # Prevent old packet from sending
 
 class ExternalProxyExternalFactory(MCFactory):
 	"""

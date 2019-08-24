@@ -102,7 +102,7 @@ class BaseProtocol(Protocol, PacketDispatcher):
 		"""
 		Dispatch a packet based off name
 		"""
-		if not self.dispatch((name,), buff):
+		if not self.dispatch(("recv", name), buff):
 			self.packet_unhandled(buff, name)
 
 	def packet_unhandled(self, buff, name):

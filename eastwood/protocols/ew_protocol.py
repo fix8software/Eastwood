@@ -33,7 +33,7 @@ class EWProtocol(BaseProtocol):
 		self.compression_index = 0 # Index for packet order
 		self.compression_handler = OutboxHandlerThread(self.compressor_output_queue, reactor.callFromThread, self.send_packet, "poem")
 		self.depression_index = 0 # Index for packet order
-		self.decompression_handler = OutboxHandlerThread(self.depressor_output_queue, reactor.callFromThread, self.parse_packet_poem)
+		self.decompression_handler = OutboxHandlerThread(self.depressor_output_queue, reactor.callFromThread, self.parse_packet_recv_poem)
 
 		self.compressors = []
 		for x in range(COMP_THREADS):
@@ -157,7 +157,7 @@ class EWProtocol(BaseProtocol):
 		self.compressor_input_queue.put_nowait((self.compression_index, b"".join(data)))
 		self.compression_index += 1 # Increment index
 
-	def packet_poem(self, buff):
+	def packet_recv_poem(self, buff):
 		"""
 		Uncompresses poem packet data
 		"""
@@ -165,7 +165,7 @@ class EWProtocol(BaseProtocol):
 		self.depressor_input_queue.put_nowait((self.depression_index, buff.read()))
 		self.depression_index += 1 # Increment index
 
-	def parse_packet_poem(self, uncompressed_data):
+	def parse_packet_recv_poem(self, uncompressed_data):
 		"""
 		Parses the poem and dispatches callouts with packet_mc_* callbacks
 		Also forwards the packets afterwards
@@ -186,21 +186,23 @@ class EWProtocol(BaseProtocol):
 		buff.discard() # Discard when done
 
 		# Dispatch calls
-		for packet in data:
-			try:
-				new_packet = self.dispatch(("mc", packet[1]), packet[0], packet[2])
+		for uuid, packet_name, packet_data in data:
+			client = self.other_factory.get_client(uuid) # Get client
+
+			try: # Attempt to dispatch
+				new_packet = client.dispatch(("send", packet_name), packet_data)
 			except BufferUnderrun:
-				self.logger.info("Packet is too short: {}".format(packet[1]))
+				self.logger.info("Packet is too short: {}".format(packet_name))
 				continue
 
 			# If nothing was returned, the packet should be sent as it was originally
 			if not new_packet:
-				new_packet = packet
+				new_packet = (packet_name, packet_data)
 
 			# Forward packet
-			if new_packet[2] != None: # If the buffer is none, it was explictly stated to not send the packet!
+			if new_packet[1] != None: # If the buffer is none, it was explictly stated to not send the packet!
 				try:
-					self.other_factory.get_client(new_packet[0]).send_packet(new_packet[1], new_packet[2].buff)
+					client.send_packet(new_packet[0], new_packet[1].buff)
 				except KeyError:
 					# The client has disconnected already, ignore
 					pass

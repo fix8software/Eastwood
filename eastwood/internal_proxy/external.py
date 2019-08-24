@@ -15,9 +15,45 @@ class InternalProxyExternalProtocol(MCProtocol):
 		# Protocol is connected, allow the other MCProtocol to send packets
 		self.other_factory.instance.send_packet("release_queue", self.buff_class.pack_uuid(self.uuid))
 
-	def packet_login_success(self, buff):
+	def packet_recv_login_success(self, buff):
 		# Switch protocol mode to play
 		self.protocol_mode = "play"
+
+	def packet_send_handshake(self, buff):
+		"""
+		Syphon protocol_mode from handshake packet
+		Only sent serverbound (handled by the external proxy)
+		https://wiki.vg/Protocol#Handshake
+		"""
+		protocol_version = buff.unpack_varint() # Protocol version
+		true_ip = buff.unpack_string() # Server ip
+		true_port = buff.unpack("H") # Server host
+		protocol_mode = buff.unpack_varint() # Protocol mode
+
+		if protocol_mode == 1: # Set the protocol mode accordingly
+			mode = "status"
+		elif protocol_mode == 2:
+			mode = "login"
+
+		# Change port number
+		new_data = buff.pack_varint(protocol_version)
+
+		# Only fake the ip if we are using bungeecord
+		# TODO: Move ip_forward to external portion of the proxy
+		if self.other_factory.ip_forward:
+			new_data += buff.pack_string(true_ip)
+			new_data += buff.pack("H", true_port)
+		else:
+			new_data += buff.pack_string(self.factory.mc_host)
+			new_data += buff.pack("H", self.factory.mc_port)
+
+		new_data += buff.pack_varint(protocol_mode)
+
+		self.send_packet("handshake", new_data) # Send packet myself
+		self.protocol_mode = mode # Change mode after sending to prevent an error
+
+		return ("handshake", None) # Prevent old packet from sending
+
 
 class InternalProxyExternalFactory(MCFactory, ClientFactory):
 	"""
@@ -65,4 +101,3 @@ class InternalProxyExternalFactory(MCFactory, ClientFactory):
 			return InternalProxyExternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.protocol_version, uuid=UUID(hex=k))
 		except ValueError:
 			pass
-
