@@ -1,10 +1,9 @@
-from collections import deque
 from quarry.net.protocol import BufferUnderrun
 from queue import Queue
 from twisted.internet import reactor
 
 from eastwood.compressor_depressor import CompressorDepressor, OutboxHandlerThread
-from eastwood.protocols.base_protocol import BaseFactory, BaseProtocol
+from eastwood.protocols.base_protocol import BaseProtocol
 from eastwood.ew_packet import packet_ids, packet_names
 
 # A bunch of variables that haven't become arguments.
@@ -205,24 +204,3 @@ class EWProtocol(BaseProtocol):
 				except KeyError:
 					# The client has disconnected already, ignore
 					pass
-
-class EWFactory(BaseFactory):
-	"""
-	Derivative of Base factory that passes required args to EWProtocol
-	"""
-	protocol=EWProtocol
-
-	def __init__(self, protocol_version, handle_direction, buffer_wait):
-		"""
-		Args:
-			protocol_version: minecraft protocol specification to use
-			handle_direction: direction packets being handled by this protocol are going (can be "clientbound" or "serverbound")
-			buffer_wait: amount of time to wait before sending buffered packets (in ms)
-		"""
-		super().__init__(protocol_version, handle_direction)
-		self.input_buffer = deque()
-		self.buffer_wait = buffer_wait
-		self.instance = None # Only one protcol can exist in EWFactory
-
-	def buildProtocol(self, addr):
-		return self.protocol(self, self.buff_class, self.handle_direction, self.other_factory, self.buffer_wait)
