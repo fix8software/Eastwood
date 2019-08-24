@@ -4,14 +4,14 @@ Acts as a proxy to intercept, encode, and send minecraft packets to the internal
 """
 from twisted.internet import reactor
 
-from eastwood.external_proxy.external import ExternalProxyBungeeCordFrontEndFactory
+from eastwood.external_proxy.external import ExternalProxyExternalFactory
 from eastwood.external_proxy.internal import ExternalProxyInternalFactory
 
 def create(protocol_version, host, port, internal_host, internal_port, buffer_wait, max_connections):
 	"""
 	Does two things:
 	Creates an instance of ExternalProxyInternalFactory which communicates with the internal proxy
-	Creates an instance of ExternalProxyBungeeCordFrontEndFactory which communicates to the clients/bungee
+	Creates an instance of ExternalProxyExternalFactory which communicates to the clients/bungee
 	Args:
 		protocol_version: protocol specification to use
 		host: external proxy's listening ip
@@ -24,8 +24,8 @@ def create(protocol_version, host, port, internal_host, internal_port, buffer_wa
 	# Create an instance of ExternalProxyInternalFactory which communicates with the internal proxy as a client
 	internal_factory = ExternalProxyInternalFactory(protocol_version, "downstream", buffer_wait)
 
-	# Creates an instance of ExternalProxyBungeeCordFrontEndFactory which communicates to the clients/bungee
-	server = ExternalProxyBungeeCordFrontEndFactory(protocol_version, "upstream", max_connections)
+	# Creates an instance of ExternalProxyExternalFactory which communicates to the clients/bungee
+	server = ExternalProxyExternalFactory(protocol_version, "upstream", max_connections)
 
 	# Assign other_factory
 	internal_factory.other_factory = server

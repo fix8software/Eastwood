@@ -5,7 +5,7 @@ from quarry.types.uuid import UUID
 from eastwood.factories.mc_factory import MCFactory
 from eastwood.protocols.mc_protocol import MCProtocol
 
-class InternalProxyMCClientProtocol(MCProtocol):
+class InternalProxyExternalProtocol(MCProtocol):
 	"""
 	Emulated client connections to trick the server that everyone is connected on LAN
 	"""
@@ -19,7 +19,7 @@ class InternalProxyMCClientProtocol(MCProtocol):
 		# Switch protocol mode to play
 		self.protocol_mode = "play"
 
-class InternalProxyMCClientFactory(MCFactory, ClientFactory):
+class InternalProxyExternalFactory(MCFactory, ClientFactory):
 	"""
 	Manages client connections and also keeps track of their identity
 	"""
@@ -62,7 +62,7 @@ class InternalProxyMCClientFactory(MCFactory, ClientFactory):
 		# Build protocol with an unassigned uuid
 		try:
 			k = [*self.uuid_dict.keys()][[*self.uuid_dict.values()].index(None)]
-			return InternalProxyMCClientProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.protocol_version, uuid=UUID(hex=k))
+			return InternalProxyExternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.protocol_version, uuid=UUID(hex=k))
 		except ValueError:
 			pass
 

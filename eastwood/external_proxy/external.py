@@ -3,9 +3,9 @@ from quarry.net.protocol import BufferUnderrun
 from eastwood.factories.mc_factory import MCFactory
 from eastwood.protocols.mc_protocol import MCProtocol
 
-class ExternalProxyBungeeCordFrontEndProtocol(MCProtocol):
+class ExternalProxyExternalProtocol(MCProtocol):
 	"""
-	The ExternalProxyBungeeCordFrontEndProtocol intercepts all packets sent to this proxy
+	The ExternalProxyExternalProtocol intercepts all packets sent to this proxy
 	The packets are then sent to ExternalProxyInternalProtocol to be buffered and then forwarded
 	Sorry for the long name, it is to prevent people from confusing it with ExternalProxyInternalProtocol (which communicates with the internal proxy)
 	"""
@@ -82,11 +82,11 @@ class ExternalProxyBungeeCordFrontEndProtocol(MCProtocol):
 		elif protocol_mode == 2:
 			self.protocol_mode = "login"
 
-class ExternalProxyBungeeCordFrontEndFactory(MCFactory):
+class ExternalProxyExternalFactory(MCFactory):
 	"""
 	Adds a connection limit to MCFactory
 	"""
-	protocol=ExternalProxyBungeeCordFrontEndProtocol
+	protocol=ExternalProxyExternalProtocol
 
 	def __init__(self, protocol_version, handle_direction, max_connections):
 		"""

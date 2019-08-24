@@ -5,14 +5,14 @@ It also sends server packets back to the external proxy to be distributed to the
 """
 from twisted.internet import reactor
 
-from eastwood.internal_proxy.external import InternalProxyMCClientFactory
+from eastwood.internal_proxy.external import InternalProxyExternalFactory
 from eastwood.internal_proxy.internal import InternalProxyInternalFactory
 from eastwood.server_pinger import ServerPingerFactory
 
 def create(protocol_version, host, port, mc_host, mc_port, buffer_wait, ip_forward):
 	"""
 	Create an instance of InternalProxyInternalProtocol which communicates with the external proxy
-	Create an instance of InternalProxyMCClientFactory which controls the clients to the real server
+	Create an instance of InternalProxyExternalFactory which controls the clients to the real server
 	Args:
 		protocol_version: protocol specification to use
 		host: internal proxy's listening ip
@@ -25,8 +25,8 @@ def create(protocol_version, host, port, mc_host, mc_port, buffer_wait, ip_forwa
 	# Create an instance of InternalProxyInternalFactory which communicates with the external proxy
 	internal_factory = InternalProxyInternalFactory(protocol_version, "upstream", buffer_wait, ip_forward)
 
-	# Create an instance of InternalProxyMCClientFactory which controls the clients to the real server
-	client_man = InternalProxyMCClientFactory(protocol_version, mc_host, mc_port, ServerPingerFactory(mc_host, mc_port))
+	# Create an instance of InternalProxyExternalFactory which controls the clients to the real server
+	client_man = InternalProxyExternalFactory(protocol_version, mc_host, mc_port, ServerPingerFactory(mc_host, mc_port))
 
 	# Assign other_factory
 	internal_factory.other_factory = client_man
