@@ -7,7 +7,8 @@ Two proxies designed to reduce network costs for Minecraft server hosting by off
 * [x] Handle communication with the Minecraft server
 * [x] Come up with a standard for inter-proxy communication
 * [x] Compress inter-proxy communication with LZMA
-* [ ] Handle compression on multiple processes to improve performance
+* [x] Handle compression on multiple processes to improve performance
+* [ ] Figure out potential ways to further "optimize" chunk data
 * [ ] Cache chunk data on the external proxy side in-memory
 * [ ] Cache chunk data on the external proxy side on-disk
 * [ ] Strip out certain parts of packets (such as heightmap data for chunks) and compute them on the external proxy side instead

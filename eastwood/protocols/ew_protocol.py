@@ -1,9 +1,9 @@
 from collections import deque
-from multiprocessing import Queue
 from quarry.net.protocol import BufferUnderrun
+from queue import Queue
 from twisted.internet import reactor
 
-from eastwood.compressor_depressor import Compressor, Depressor, OutboxHandlerThread
+from eastwood.compressor_depressor import CompressorDepressor, OutboxHandlerThread
 from eastwood.protocols.base_protocol import BaseFactory, BaseProtocol
 from eastwood.ew_packet import packet_ids, packet_names
 
@@ -32,17 +32,17 @@ class EWProtocol(BaseProtocol):
 		self.depressor_output_queue = Queue()
 
 		self.compression_index = 0 # Index for packet order
-		self.compression_handler = OutboxHandlerThread(self.compressor_output_queue, reactor.callFromThread, self.send_data)
+		self.compression_handler = OutboxHandlerThread(self.compressor_output_queue, reactor.callFromThread, self.send_packet, "poem")
 		self.depression_index = 0 # Index for packet order
-		self.decompression_handler = OutboxHandlerThread(self.depressor_output_queue, reactor.callFromThread, super().dataReceived)
+		self.decompression_handler = OutboxHandlerThread(self.depressor_output_queue, reactor.callFromThread, self.parse_packet_poem)
 
 		self.compressors = []
 		for x in range(COMP_THREADS):
-			self.compressors.append(Compressor(self.compressor_input_queue, self.compressor_output_queue))
+			self.compressors.append(CompressorDepressor(self.compressor_input_queue, self.compressor_output_queue, "compress"))
 
 		self.depressors = []
 		for x in range(DEP_THREADS):
-			self.depressors.append(Depressor(self.depressor_input_queue, self.depressor_output_queue))
+			self.depressors.append(CompressorDepressor(self.depressor_input_queue, self.depressor_output_queue, "decompress"))
 
 	def connectionMade(self):
 		"""
@@ -77,23 +77,18 @@ class EWProtocol(BaseProtocol):
 
 		# Stop compressor and decompressor
 		for x in self.compressors:
-			x.kill()
+			x.running = False
+			x.join()
 
 		for x in self.depressors:
-			x.kill()
+			x.running = False
+			x.join()
 
 		# Stop handlers
 		self.compression_handler.running = False
 		self.decompression_handler.running = False
 		self.compression_handler.join()
 		self.decompression_handler.join()
-
-	def dataReceived(self, data):
-		"""
-		Called by twisted when data is received over tcp by the protocol
-		"""
-		self.depressor_input_queue.put_nowait((self.depression_index, data))
-		self.depression_index += 1 # Increment index
 
 	def get_packet_name(self, id):
 		"""
@@ -137,23 +132,6 @@ class EWProtocol(BaseProtocol):
 
 		return info[0]
 
-	def send_packet(self, name, *data):
-		"""
-		Sends a ew packet to the other proxy
-		"""
-		data = b"".join(data) # Combine data
-		data = self.buff_class.pack_varint(self.get_packet_id(name)) + data # Prepend packet ID
-		data = self.buff_class.pack_packet(data) # Pack data as a packet
-
-		self.compressor_input_queue.put_nowait((self.compression_index, data))
-		self.compression_index += 1 # Increment index
-
-	def send_data(self, data):
-		"""
-		Callback for compressor
-		"""
-		self.transport.write(data)
-
 	def send_buffered_packets(self):
 		"""
 		Sends all packets in self.input_buffer to the other proxy as a poem
@@ -176,14 +154,25 @@ class EWProtocol(BaseProtocol):
 
 			packet_data.discard() # Buffer is no longer needed
 
-		# Send poem
-		self.send_packet("poem", *data)
+		# Compress poem and send
+		self.compressor_input_queue.put_nowait((self.compression_index, b"".join(data)))
+		self.compression_index += 1 # Increment index
 
 	def packet_poem(self, buff):
+		"""
+		Uncompresses poem packet data
+		"""
+		# Decompress data
+		self.depressor_input_queue.put_nowait((self.depression_index, buff.read()))
+		self.depression_index += 1 # Increment index
+
+	def parse_packet_poem(self, uncompressed_data):
 		"""
 		Parses the poem and dispatches callouts with packet_mc_* callbacks
 		Also forwards the packets afterwards
 		"""
+		buff = self.buff_class(uncompressed_data) # Create buffer
+
 		data = []
 		try:
 			while True: # Unpack data until a bufferunderrun

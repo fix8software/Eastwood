@@ -2,23 +2,14 @@
 Threaded classes which offload the work of compression and decompression from EWProtocol and its subclasses
 """
 import logging
-import lzma
-from multiprocessing import Process
 from queue import Empty
 from threading import Thread
 
-# A bunch of variables that haven't become arguments.
-# Designed to control how data is transmitted between EP and IP, which
-# means that both the IP and EP must have equal configurations.
-COMPRESSION_LEVEL = 0
-COMPRESSION_FILTERS = [
-	#{"id": lzma.FILTER_DELTA, "dist": 1},
-    {"id": lzma.FILTER_LZMA2, "preset": COMPRESSION_LEVEL},
-]
+from eastwood.plasma import ParallelCompressionInterface
 
 class OutboxHandlerThread(Thread):
 	"""
-	Threaded class that handles data from multiprocess queues
+	Threaded class that handles data from queues
 	"""
 	def __init__(self, queue, callback, *args, **kwargs):
 		"""
@@ -29,14 +20,17 @@ class OutboxHandlerThread(Thread):
 			**kwargs: kwargs to append to callback
 		"""
 		super().__init__()
+		self.daemon = True
+
+		self.running = True # Controls the loop
+
+		self.logger = logging.getLogger(name=self.__class__.__name__)
+		self.logger.setLevel(logging.INFO)
 
 		self.callback = callback
 		self.callback_args = args
 		self.callback_kwargs = kwargs
-		self.logger = logging.getLogger(name=self.__class__.__name__)
-		self.logger.setLevel(logging.INFO)
-		self.daemon = True
-		self.running = True # Controls the loop
+
 		self.queue = queue # Outbound queue
 		self.wait_list = {} # Packets waiting for other packets to process
 		self.index = 0 # Current index (index of last packet processed)
@@ -72,90 +66,57 @@ class OutboxHandlerThread(Thread):
 					self.run_callback(patient[1]) # Send it
 				self.index += 1 # Increment index
 
+			self.queue.task_done()
+
 	def run_callback(self, *args, **kwargs):
 		"""
 		Runs the callback with the provided callback args and kwargs
 		"""
 		self.callback(*self.callback_args, *args, **self.callback_kwargs, **kwargs)
 
-class BaseCompressionProcess(Process):
+class CompressorDepressor(Thread):
 	"""
-	Base class to prevent dry code
+	Threaded class that either compresses or decompresses data from queues
 	"""
-	def __init__(self, input_queue, output_queue):
+	def __init__(self, input_queue, output_queue, handle_mode):
 		"""
 		Args:
 			input_queue: queue to use for input (accepts tuple of index, data)
 			output_queue: queue to output to
+			handle_mode: method to handle data, either "compress" or "decompress"
 		"""
 		super().__init__()
+		self.daemon = True
+
+		self.running = True # Controls the loop
 
 		self.logger = logging.getLogger(name=self.__class__.__name__)
 		self.logger.setLevel(logging.INFO)
-		self.daemon = True
+
 		self.input_queue = input_queue # Compression/decompression queue
 		self.output_queue = output_queue # Sent to the handler
 
+		# Plasma instance
+		self.plasma = ParallelCompressionInterface()
+		if handle_mode == "compress":
+			self.handle_func = self.plasma.compress
+		elif handle_mode == "decompress":
+			self.handle_func = self.plasma.decompress
+		else:
+			raise ValueError
+
 	def run(self):
-		while True:
+		while self.running:
 			try:
 				packet_tuple = self.input_queue.get(timeout=1)
 			except Empty:
 				continue
 
-			new_data = self.handle_data(packet_tuple[1])
+			try: # Ignore packet if there are *any* errors
+				new_data = self.handle_func(packet_tuple[1])
+			except:
+				self.logger.warn("Packet Index #{} thrown out!".format(packet_tuple[0]))
+				new_data = None
+
 			self.output_queue.put_nowait((packet_tuple[0], new_data))
-
-	def handle_data(self, data):
-		"""
-		Logic to handle data popped from queue
-		Meant to be overriden
-		"""
-		pass
-
-class Compressor(BaseCompressionProcess):
-	def __init__(self, input_queue, output_queue):
-		"""
-		Args:
-			input_queue: queue to use for input (accepts tuple of index, data)
-			output_queue: queue to output to
-		"""
-		super().__init__(input_queue, output_queue)
-
-		self.compressor_rcyl = (lambda x: lzma.compress(x, format=lzma.FORMAT_RAW, filters=COMPRESSION_FILTERS))
-
-	def handle_data(self, data):
-		# LZMA compress data
-		try:
-			return self.compressor_rcyl(data)
-		except lzma.LZMAError:
-			self.logger.warn("Failed to lzma compress packet!")
-
-class Depressor(BaseCompressionProcess):
-	def __init__(self, input_queue, output_queue):
-		"""
-		Args:
-			input_queue: queue to use for input (accepts tuple of index, data)
-			output_queue: queue to output to
-		"""
-		super().__init__(input_queue, output_queue)
-
-		self.decompressor_rcyl = (lambda: lzma.LZMADecompressor(format=lzma.FORMAT_RAW, filters=COMPRESSION_FILTERS))
-		self.decompressor = self.decompressor_rcyl() # LZMA provides an internal buffer incase incomplete packets are sent
-
-	def handle_data(self, data):
-		# LZMA uncompress data
-		uncompressed_data = b""
-		while True:
-			try:
-				uncompressed_data += self.decompressor.decompress(data)
-			except lzma.LZMAError:
-				self.logger.warn("Failed to lzma decompress packet!")
-				return
-
-			if self.decompressor.eof: # eof is reached, create a new decompressor
-				data = self.decompressor.unused_data # reuse old data in another call
-				self.decompressor = self.decompressor_rcyl() # New decompressor
-				continue # Now uncompress unused data
-
-			return uncompressed_data # Returned already decompressed data
+			self.input_queue.task_done()
