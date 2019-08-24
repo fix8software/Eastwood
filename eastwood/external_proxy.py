@@ -30,6 +30,12 @@ class ExternalProxyBungeeCordFrontEndProtocol(MCProtocol):
 		self.queue = [] # A queue exists at first to prevent packets from sending when the lan client/other mcprotocol hasn't been created yet
 
 	def connectionMade(self):
+		# Make sure we are not over the connection limit
+		self.factory.num_connections += 1
+		if self.factory.num_connections > self.factory.max_connections:
+			self.transport.loseConnection() # Kick
+			return
+
 		super().connectionMade()
 
 		# Tell the other mcprotocol
@@ -40,6 +46,9 @@ class ExternalProxyBungeeCordFrontEndProtocol(MCProtocol):
 
 	def connectionLost(self, reason):
 		super().connectionLost(reason)
+
+		# Subtract from conn limit
+		self.factory.num_connections += 1
 
 		# Tell the internal mcprotocol
 		try:
@@ -80,6 +89,24 @@ class ExternalProxyBungeeCordFrontEndProtocol(MCProtocol):
 		elif protocol_mode == 2:
 			self.protocol_mode = "login"
 
+class ExternalProxyBungeeCordFrontEndFactory(MCFactory):
+	"""
+	Adds a connection limit to MCFactory
+	"""
+	protocol=ExternalProxyBungeeCordFrontEndProtocol
+
+	def __init__(self, protocol_version, handle_direction, max_connections):
+		"""
+		Args:
+			protocol_version: minecraft protocol specification to use
+			handle_direction: direction packets being handled by this protocol are going (can be "clientbound" or "serverbound")
+			max_connections: max amount of clients to accept before kicking
+		"""
+		super().__init__(protocol_version, handle_direction)
+
+		self.max_connections = max_connections
+		self.num_connections = 0
+
 class ExternalProxyInternalProtocol(EWProtocol):
 	"""
 	Handles sending data as buffered "poems" from clients to the internal proxy and vice versa
@@ -117,11 +144,11 @@ class ExternalProxyInternalFactory(EWFactory, ReconnectingClientFactory):
 		self.resetDelay() # Reset the reconnect delay
 		return ExternalProxyInternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.buffer_wait)
 
-def create(protocol_version, host, port, internal_host, internal_port, buffer_wait):
+def create(protocol_version, host, port, internal_host, internal_port, buffer_wait, max_connections):
 	"""
 	Does two things:
 	Creates an instance of ExternalProxyInternalFactory which communicates with the internal proxy
-	Creates an instance of MCFactory with ExternalProxyBungeeCordFrontEndProtocol
+	Creates an instance of ExternalProxyBungeeCordFrontEndFactory which communicates to the clients/bungee
 	Args:
 		protocol_version: protocol specification to use
 		host: external proxy's listening ip
@@ -129,13 +156,13 @@ def create(protocol_version, host, port, internal_host, internal_port, buffer_wa
 		internal_host: internal proxy's ip
 		internal_port: internal proxy's port
 		buffer_wait: amount of time to wait before sending buffered packets (in ms)
+		max_connections: max amount of clients to accept before kicking
 	"""
 	# Create an instance of ExternalProxyInternalFactory which communicates with the internal proxy as a client
 	internal_factory = ExternalProxyInternalFactory(protocol_version, "downstream", buffer_wait)
 
-	# Create a MCFactory and assign it the ExternalProxyBungeeCordFrontEndProtocol which will handle packets
-	server = MCFactory(protocol_version, "upstream")
-	server.protocol = ExternalProxyBungeeCordFrontEndProtocol
+	# Creates an instance of ExternalProxyBungeeCordFrontEndFactory which communicates to the clients/bungee
+	server = ExternalProxyBungeeCordFrontEndFactory(protocol_version, "upstream", 0, max_connections)
 
 	# Assign other_factory
 	internal_factory.other_factory = server
