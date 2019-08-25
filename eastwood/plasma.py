@@ -10,6 +10,7 @@ import zstd as algo # Used for all blocks
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
 SIZE_BYTES = 4
+META_BYTES = 1
 BYTE_ORDER = 'little'
 
 class ParallelCompressionInterface(object):
@@ -38,6 +39,12 @@ class ParallelCompressionInterface(object):
 		for i in range(0, len(l), n):
 			yield l[i:i+n]
 
+	def __int_in(self, i: int, s: int = META_BYTES):
+		return i.to_bytes(s, byteorder=BYTE_ORDER)
+
+	def __int_out(self, i: bytes):
+		return int.from_bytes(i, byteorder=BYTE_ORDER)
+
 	def compress(self, input: bytes, level: int = 9, chunks: int = -1) -> bytes:
 		"""
 		Main compression function.
@@ -52,8 +59,15 @@ class ParallelCompressionInterface(object):
 
 		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / chunks)))))
 		chunks = self.__pool.imap(_internal_compression, [self.__level_arguments(c, level) for c in chunks])
+		result = b''.join(chunks)
 
-		return b''.join(chunks)
+		if len(result) > len(input):
+			meta = self.__int_in(0b00000000)
+			result = input
+		else:
+			meta = self.__int_in(0b00000001)
+
+		return meta + result
 
 	def decompress(self, input: bytes) -> bytes:
 		"""
@@ -61,6 +75,11 @@ class ParallelCompressionInterface(object):
 		Args:
 			input: Bytes to decompress - Note this is not compatible with the output of the standard compression function.
 		"""
+
+		if self.__int_out(input[:META_BYTES]) == 0b00000000:
+			return input[META_BYTES:]
+		else:
+			input = input[META_BYTES:]
 
 		chunks = []
 		while len(input) > 0:
@@ -83,3 +102,11 @@ def _internal_compression(args) -> bytes:
 
 def _internal_decompression(input: bytes) -> bytes:
 	return _decompress(input)
+
+if __name__ == '__main__':
+	import os
+	data = os.urandom(128)
+	x = ParallelCompressionInterface()
+	a = x.compress(data)
+	b = x.decompress(a)
+	assert b == data
