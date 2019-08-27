@@ -39,6 +39,7 @@ class ParallelCompressionInterface(object):
 		self.__target_speed = target_speed_ms
 		self.__average_too_high_size = self.__ATHS_START
 		self.__unlearn_setback = self.__jitter_setback_training()
+		self.__average_too_high_size = self.__ATHS_START
 		
 		self.__threads = []
 		
