@@ -4,7 +4,7 @@ Naphtha's craaazy parallel compression class for high speed tasks such as mass n
 from psutil import cpu_count
 from multiprocessing.pool import ThreadPool
 from threading import Thread
-import zstd, time
+import zstd, time, os
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
@@ -19,7 +19,7 @@ class ParallelCompressionInterface(object):
 	__BUFFER_TIME_MS = 10
 	__TOO_LOW_MAX = 8
 	__UNLEARN_INTERVAL_SECONDS = 300
-	__UNLEARN_SETBACK = 0x003FFFFF
+	__ATHS_START = 0x003FFFFF
 	
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
@@ -30,14 +30,16 @@ class ParallelCompressionInterface(object):
 			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
 		"""
 
-		self.__target_speed = target_speed_ms
+		self.__too_low_tries = 0
+		self.__big_data = b''
+		self.__global_level = self.__MAX_LEVEL
 		self.__pool = ThreadPool(nodes)
 		self.__internal_node_count = nodes
 		self.__average_time = 0
-		self.__average_too_high_size = self.__UNLEARN_SETBACK
-		self.__global_level = self.__MAX_LEVEL
-		self.__too_low_tries = 0
-		self.__big_data = b''
+		self.__target_speed = target_speed_ms
+		self.__average_too_high_size = self.__ATHS_START
+		self.__unlearn_setback = self.__jitter_setback_training()
+		
 		self.__threads = []
 		
 		self.__threads.append(Thread(target=self.__jitter_training_reinitialization_thread))
@@ -46,6 +48,19 @@ class ParallelCompressionInterface(object):
 		
 		self.last_level = self.__global_level
 		
+	def __jitter_setback_training(self) -> int:
+		increment = (2 ** 16) - 1
+		speed = 0
+		size = increment
+		while speed < self.__target_speed * 3:
+			for _ in range(2):
+				data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
+				st = time.time()
+				__ = self.compress(data, self.__MAX_LEVEL)
+				speed = (time.time() - st) * 1000
+				size += increment
+		return size
+		
 	def __jitter_training_reinitialization_thread(self):
 		while True:
 			start = time.time()
@@ -53,7 +68,7 @@ class ParallelCompressionInterface(object):
 			timed = (time.time() - start) * 1000
 			
 			if timed < self.__target_speed:
-				self.__average_too_high_size = self.__UNLEARN_SETBACK
+				self.__average_too_high_size = self.__unlearn_setback
 			time.sleep(self.__UNLEARN_INTERVAL_SECONDS)
 
 	def __level_arguments(self, chunk: bytes, level: int) -> tuple:
