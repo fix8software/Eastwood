@@ -30,6 +30,7 @@ class ParallelCompressionInterface(object):
 		self.__pool = ThreadPool(nodes)
 		self.__internal_node_count = nodes
 		self.__average_time = 0
+		self.__average_too_high_size = 0x00FFFFFF
 		self.__global_level = self.__MAX_LEVEL
 		self.__too_low_tries = 0
 
@@ -52,7 +53,7 @@ class ParallelCompressionInterface(object):
 	def __int_out(self, i: bytes):
 		return int.from_bytes(i, byteorder=BYTE_ORDER)
 
-	def compress(self, input: bytes, level: int = -1, target_limit_ms: int = 50) -> bytes:
+	def compress(self, input: bytes, level: int = -1, target_limit_ms: int = 20) -> bytes:
 		"""
 		Main compression function.
 		Args:
@@ -62,14 +63,16 @@ class ParallelCompressionInterface(object):
 		"""
 
 		if level < 1:
-			level = self.__global_level
+			suggested = (lambda x,l,u: l if x<l else u if x>u else x)((lambda x,a,b,c,d: (x-a)/(b-a)*(d-c)+c)(len(input),0,self.__average_too_high_size,self.__MAX_LEVEL,self.__MIN_LEVEL),self.__MIN_LEVEL,self.__MAX_LEVEL)
+			level = int((self.__global_level + suggested) // 2)
 
 		startt = time.time()
 		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.__internal_node_count)))))
 		chunks = self.__pool.map(_internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
 		
-		self.__average_time = (self.__average_time + ((time.time() - startt) * 1000)) / 2
+		msec = ((time.time() - startt) * 1000)
+		self.__average_time = (self.__average_time + msec) / 2
 		if self.__average_time > target_limit_ms and self.__global_level > self.__MIN_LEVEL:
 			self.__global_level -= 1
 		elif self.__average_time < target_limit_ms - self.__BUFFER_TIME_MS and self.__global_level < self.__MAX_LEVEL:
@@ -77,7 +80,9 @@ class ParallelCompressionInterface(object):
 			if self.__too_low_tries >= self.__TOO_LOW_MAX:
 				self.__global_level += 1
 				self.__too_low_tries = 0
-			
+				
+		if msec > target_limit_ms:
+			self.__average_too_high_size = (self.__average_too_high_size + len(input)) // 2
 
 		if len(result) > len(input):
 			meta = self.__int_in(0b00000000)
@@ -124,7 +129,7 @@ def _internal_decompression(input: bytes) -> bytes:
 
 if __name__ == '__main__':
 	import os
-	data = os.urandom(128)
+	data = os.urandom(1024*1024*17)
 	x = ParallelCompressionInterface()
 	a = x.compress(data)
 	b = x.decompress(a)
