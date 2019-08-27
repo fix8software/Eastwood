@@ -21,7 +21,7 @@ class ParallelCompressionInterface(object):
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
-	def __init__(self, nodes: int = cpu_count() * 2):
+	def __init__(self, nodes: int = cpu_count()):
 		"""
 		Args:
 			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
@@ -66,7 +66,7 @@ class ParallelCompressionInterface(object):
 
 		startt = time.time()
 		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.__internal_node_count)))))
-		chunks = self.__pool.imap(_internal_compression, [self.__level_arguments(c, level) for c in chunks])
+		chunks = self.__pool.map(_internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
 		
 		self.__average_time = (self.__average_time + ((time.time() - startt) * 1000)) / 2
@@ -105,7 +105,7 @@ class ParallelCompressionInterface(object):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 
-		return b''.join(self.__pool.imap(_internal_decompression, chunks))
+		return b''.join(self.__pool.map(_internal_decompression, chunks))
 
 # These methods are not stored in a class in order to make them easier to access for multiple processes
 def _compress(input: bytes, level: int = 6) -> bytes:
