@@ -3,6 +3,7 @@ Naphtha's craaazy parallel compression class for high speed tasks such as mass n
 """
 from psutil import cpu_count
 from multiprocessing.pool import ThreadPool
+from threading import Thread
 import zstd, time
 
 # These variables are the ones that probably won't break anything if you change them.
@@ -17,22 +18,43 @@ class ParallelCompressionInterface(object):
 	__MIN_LEVEL = 1
 	__BUFFER_TIME_MS = 10
 	__TOO_LOW_MAX = 8
+	__UNLEARN_INTERVAL_SECONDS = 300
+	__UNLEARN_SETBACK = 0x003FFFFF
 	
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
-	def __init__(self, nodes: int = cpu_count()):
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 20):
 		"""
 		Args:
 			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
 		"""
 
+		self.__target_speed = target_speed_ms
 		self.__pool = ThreadPool(nodes)
 		self.__internal_node_count = nodes
 		self.__average_time = 0
-		self.__average_too_high_size = 0x00FFFFFF
+		self.__average_too_high_size = self.__UNLEARN_SETBACK
 		self.__global_level = self.__MAX_LEVEL
 		self.__too_low_tries = 0
+		self.__big_data = b''
+		self.__threads = []
+		
+		self.__threads.append(Thread(target=self.__jitter_training_reinitialization_thread))
+		self.__threads[-1].daemon = True
+		self.__threads[-1].start()
+		
+		self.last_level = self.__global_level
+		
+	def __jitter_training_reinitialization_thread(self):
+		while True:
+			start = time.time()
+			_ = self.compress(self.__big_data, self.__global_level)
+			timed = (time.time() - start) * 1000
+			
+			if timed < self.__target_speed:
+				self.__average_too_high_size = self.__UNLEARN_SETBACK
+			time.sleep(self.__UNLEARN_INTERVAL_SECONDS)
 
 	def __level_arguments(self, chunk: bytes, level: int) -> tuple:
 		"""
@@ -53,7 +75,7 @@ class ParallelCompressionInterface(object):
 	def __int_out(self, i: bytes):
 		return int.from_bytes(i, byteorder=BYTE_ORDER)
 
-	def compress(self, input: bytes, level: int = -1, target_limit_ms: int = 20) -> bytes:
+	def compress(self, input: bytes, level: int = -1) -> bytes:
 		"""
 		Main compression function.
 		Args:
@@ -73,16 +95,17 @@ class ParallelCompressionInterface(object):
 		
 		msec = ((time.time() - startt) * 1000)
 		self.__average_time = (self.__average_time + msec) / 2
-		if self.__average_time > target_limit_ms and self.__global_level > self.__MIN_LEVEL:
+		if self.__average_time > self.__target_speed and self.__global_level > self.__MIN_LEVEL:
 			self.__global_level -= 1
-		elif self.__average_time < target_limit_ms - self.__BUFFER_TIME_MS and self.__global_level < self.__MAX_LEVEL:
+		elif self.__average_time < self.__target_speed - self.__BUFFER_TIME_MS and self.__global_level < self.__MAX_LEVEL:
 			self.__too_low_tries += 1
 			if self.__too_low_tries >= self.__TOO_LOW_MAX:
 				self.__global_level += 1
 				self.__too_low_tries = 0
 				
-		if msec > target_limit_ms:
+		if msec > self.__target_speed:
 			self.__average_too_high_size = (self.__average_too_high_size + len(input)) // 2
+			self.__big_data = input
 
 		if len(result) > len(input):
 			meta = self.__int_in(0b00000000)
@@ -90,6 +113,7 @@ class ParallelCompressionInterface(object):
 		else:
 			meta = self.__int_in(0b00000001)
 
+		self.last_level = level
 		return meta + result
 
 	def decompress(self, input: bytes) -> bytes:
@@ -128,8 +152,8 @@ def _internal_decompression(input: bytes) -> bytes:
 	return _decompress(input)
 
 if __name__ == '__main__':
-	import os
-	data = os.urandom(1024*1024*17)
+	import os, random
+	data = os.urandom(1024)
 	x = ParallelCompressionInterface()
 	a = x.compress(data)
 	b = x.decompress(a)
