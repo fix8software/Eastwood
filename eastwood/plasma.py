@@ -3,9 +3,7 @@ Naphtha's craaazy parallel compression class for high speed tasks such as mass n
 """
 from psutil import cpu_count
 from multiprocessing.pool import ThreadPool
-
-# Import different algorithms for various stages of compression
-import zstd as algo # Used for all blocks
+import zstd, time, numpy
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
@@ -14,6 +12,11 @@ META_BYTES = 1
 BYTE_ORDER = 'little'
 
 class ParallelCompressionInterface(object):
+	# zstd attributes
+	__MAX_LEVEL = 22
+	__MIN_LEVEL = 1
+	__BUFFER_TIME_MS = 10
+	
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
@@ -25,6 +28,8 @@ class ParallelCompressionInterface(object):
 
 		self.__pool = ThreadPool(nodes)
 		self.__internal_node_count = nodes
+		self.__average_time = 0
+		self.__global_level = self.__MAX_LEVEL
 
 	def __level_arguments(self, chunk: bytes, level: int) -> tuple:
 		"""
@@ -45,7 +50,7 @@ class ParallelCompressionInterface(object):
 	def __int_out(self, i: bytes):
 		return int.from_bytes(i, byteorder=BYTE_ORDER)
 
-	def compress(self, input: bytes, level: int = 9, chunks: int = -1) -> bytes:
+	def compress(self, input: bytes, level: int = -1, target_limit_ms: int = 50) -> bytes:
 		"""
 		Main compression function.
 		Args:
@@ -54,12 +59,20 @@ class ParallelCompressionInterface(object):
 			chunks: Chunks to compress with
 		"""
 
-		if chunks < 1:
-			chunks = self.__internal_node_count
+		if level < 1:
+			level = self.__global_level
 
-		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / chunks)))))
+		startt = time.time()
+		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.__internal_node_count)))))
 		chunks = self.__pool.imap(_internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
+		
+		self.__average_time = (self.__average_time + ((time.time() - startt) * 1000)) / 2
+		if self.__average_time > target_limit_ms and self.__global_level > self.__MIN_LEVEL:
+			self.__global_level -= 1
+		elif self.__average_time < target_limit_ms - self.__BUFFER_TIME_MS and self.__global_level < self.__MAX_LEVEL:
+			self.__global_level += 1
+			
 
 		if len(result) > len(input):
 			meta = self.__int_in(0b00000000)
@@ -89,11 +102,12 @@ class ParallelCompressionInterface(object):
 
 		return b''.join(self.__pool.imap(_internal_decompression, chunks))
 
+# These methods are not stored in a class in order to make them easier to access for multiple processes
 def _compress(input: bytes, level: int = 6) -> bytes:
-	return algo.compress(input, level)
+	return zstd.compress(input, level)
 
 def _decompress(input: bytes) -> bytes:
-	return algo.decompress(input)
+	return zstd.decompress(input)
 
 def _internal_compression(args) -> bytes:
 	capsule = _compress(args[0], args[1])
