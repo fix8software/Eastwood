@@ -18,7 +18,7 @@ class ParallelCompressionInterface(object):
 	__MIN_LEVEL = 1
 	__BUFFER_TIME_MS = 10
 	__TOO_LOW_MAX = 8
-	__UNLEARN_INTERVAL_SECONDS = 300
+	__UNLEARN_INTERVAL_SECONDS = 120
 	__ATHS_START = 0x003FFFFF
 	
 	"""
