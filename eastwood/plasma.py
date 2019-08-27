@@ -16,6 +16,7 @@ class ParallelCompressionInterface(object):
 	__MAX_LEVEL = 22
 	__MIN_LEVEL = 1
 	__BUFFER_TIME_MS = 10
+	__TOO_LOW_MAX = 8
 	
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
@@ -30,10 +31,11 @@ class ParallelCompressionInterface(object):
 		self.__internal_node_count = nodes
 		self.__average_time = 0
 		self.__global_level = self.__MAX_LEVEL
+		self.__too_low_tries = 0
 
 	def __level_arguments(self, chunk: bytes, level: int) -> tuple:
 		"""
-		Private function to automatically prepare arguments for internal compression and starmapping.
+		Private function to automatically prepare arguments for internal compression.
 		"""
 		return (chunk, level)
 
@@ -71,7 +73,10 @@ class ParallelCompressionInterface(object):
 		if self.__average_time > target_limit_ms and self.__global_level > self.__MIN_LEVEL:
 			self.__global_level -= 1
 		elif self.__average_time < target_limit_ms - self.__BUFFER_TIME_MS and self.__global_level < self.__MAX_LEVEL:
-			self.__global_level += 1
+			self.__too_low_tries += 1
+			if self.__too_low_tries >= self.__TOO_LOW_MAX:
+				self.__global_level += 1
+				self.__too_low_tries = 0
 			
 
 		if len(result) > len(input):
