@@ -1,3 +1,4 @@
+from collections import defaultdict
 from quarry.net.protocol import BufferUnderrun
 from queue import Queue
 from twisted.internet import reactor
@@ -141,20 +142,22 @@ class EWProtocol(BaseProtocol):
 		if len(self.factory.input_buffer) < 1: # Do not send empty packets
 			return
 
-		data = []
+		poem = defaultdict(bytes) # Use default dict to keep track of packet data by name
+
 		for i in range(len(self.factory.input_buffer)): # Per packet info
 			uuid, packet_name, packet_data = self.factory.input_buffer.popleft()
 			buff = packet_data.buff # We don't use read because we need the entire buffer's data
 
-			data.append(self.buff_class.pack_uuid(uuid)) # Pack uuid of client
+			poem[packet_name] += self.buff_class.pack_varint(i) # Pack index of packet
+			poem[packet_name] += self.buff_class.pack_uuid(uuid) # Pack uuid of client
 			# TODO: Pass the id instead of the string name to save bandwidth?
 			buff = self.buff_class.pack_string(packet_name) + buff # Prepend packet name to buffer
-			data.append(self.buff_class.pack_packet(buff)) # Append buffer as packet
+			poem[packet_name] += self.buff_class.pack_packet(buff) # Append buffer as packet
 
 			packet_data.discard() # Buffer is no longer needed
 
 		# Compress poem and send
-		self.compressor_input_queue.put_nowait((self.compression_index, b"".join(data)))
+		self.compressor_input_queue.put_nowait((self.compression_index, b"".join(buff for buff in poem.values())))
 		self.compression_index += 1 # Increment index
 
 	def packet_recv_poem(self, buff):
@@ -172,18 +175,22 @@ class EWProtocol(BaseProtocol):
 		"""
 		buff = self.buff_class(uncompressed_data) # Create buffer
 
-		data = []
+		unordered_data = {} # Holds packets by index
 		try:
 			while True: # Unpack data until a bufferunderrun
+				index = buff.unpack_varint()
 				uuid = buff.unpack_uuid()
 				packet = buff.unpack_packet(self.buff_class) # Packet is unpacked here as the subclass will just forward it
 				packet_name = packet.unpack_string()
 				packet.save()
-				data.append((uuid, packet_name, packet))
+				unordered_data[index] = (uuid, packet_name, packet)
 		except BufferUnderrun:
 			pass
 
 		buff.discard() # Discard when done
+
+		# Order data by index
+		data = [tup[1] for tup in sorted(unordered_data.items(), key=lambda kv: kv[0])]
 
 		# Dispatch calls
 		for uuid, packet_name, packet_data in data:
