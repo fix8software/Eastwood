@@ -146,18 +146,20 @@ class EWProtocol(BaseProtocol):
 
 		for i in range(len(self.factory.input_buffer)): # Per packet info
 			uuid, packet_name, packet_data = self.factory.input_buffer.popleft()
-			buff = packet_data.buff # We don't use read because we need the entire buffer's data
 
-			poem[packet_name] += self.buff_class.pack_varint(i) # Pack index of packet
-			poem[packet_name] += self.buff_class.pack_uuid(uuid) # Pack uuid of client
 			# TODO: Pass the id instead of the string name to save bandwidth?
-			buff = self.buff_class.pack_string(packet_name) + buff # Prepend packet name to buffer
-			poem[packet_name] += self.buff_class.pack_packet(buff) # Append buffer as packet
+			buff = self.buff_class.pack_string(packet_name) + packet_data.buff # Prepend packet name to buffer
+
+			poem[packet_name] = b"".join(poem[packet_name],
+								self.buff_class.pack_varint(i), # Pack index of packet
+								self.buff_class.pack_uuid(uuid), # Pack uuid of client
+								self.buff_class.pack_packet(buff) # Append buffer as packet
+								)
 
 			packet_data.discard() # Buffer is no longer needed
 
 		# Compress poem and send
-		self.compressor_input_queue.put_nowait((self.compression_index, b"".join(buff for buff in poem.values())))
+		self.compressor_input_queue.put_nowait((self.compression_index, b"".join(poem.values())))
 		self.compression_index += 1 # Increment index
 
 	def packet_recv_poem(self, buff):
@@ -189,11 +191,10 @@ class EWProtocol(BaseProtocol):
 
 		buff.discard() # Discard when done
 
-		# Order data by index
-		data = [tup[1] for tup in sorted(unordered_data.items(), key=lambda kv: kv[0])]
-
 		# Dispatch calls
-		for uuid, packet_name, packet_data in data:
+		for tup in sorted(unordered_data.items(), key=lambda kv: kv[0]):
+			uuid, packet_name, packet_data = tup[1]
+
 			try:
 				client = self.other_factory.get_client(uuid) # Get client
 			except KeyError:
