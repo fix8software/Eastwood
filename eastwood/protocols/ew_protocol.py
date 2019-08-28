@@ -150,11 +150,11 @@ class EWProtocol(BaseProtocol):
 			# TODO: Pass the id instead of the string name to save bandwidth?
 			buff = self.buff_class.pack_string(packet_name) + packet_data.buff # Prepend packet name to buffer
 
-			poem[packet_name] = b"".join(poem[packet_name],
+			poem[packet_name] = b"".join([poem[packet_name],
 								self.buff_class.pack_varint(i), # Pack index of packet
 								self.buff_class.pack_uuid(uuid), # Pack uuid of client
 								self.buff_class.pack_packet(buff) # Append buffer as packet
-								)
+								])
 
 			packet_data.discard() # Buffer is no longer needed
 
