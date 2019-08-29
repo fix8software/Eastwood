@@ -72,23 +72,27 @@ class ParallelCompressionInterface(object):
 				self.__average_too_high_size = self.__unlearn_setback
 			time.sleep(self.__UNLEARN_INTERVAL_SECONDS)
 
-	def __level_arguments(self, chunk: bytes, level: int) -> tuple:
+	@staticmethod
+	def __level_arguments(chunk: bytes, level: int) -> tuple:
 		"""
 		Private function to automatically prepare arguments for internal compression.
 		"""
 		return (chunk, level)
 
-	def __chunks(self, l, n):
+	@staticmethod
+	def __chunks(l, n):
 		"""
 		Quickest way to break up compression data into multiple chunks of bytes.
 		"""
 		for i in range(0, len(l), n):
 			yield l[i:i+n]
 
-	def __int_in(self, i: int, s: int = META_BYTES):
+	@staticmethod
+	def __int_in(i: int, s: int = META_BYTES):
 		return i.to_bytes(s, byteorder=BYTE_ORDER)
 
-	def __int_out(self, i: bytes):
+	@staticmethod
+	def __int_out(i: bytes):
 		return int.from_bytes(i, byteorder=BYTE_ORDER)
 
 	def compress(self, input: bytes, level: int = -1) -> bytes:
