@@ -17,7 +17,10 @@ class ExternalProxyInternalProtocol(EWProtocol):
 
 		# Hash password
 		salt = token_bytes()
-		hashed_pass = sha256().update(self.password.encode() + salt).digest()
+
+		sha = sha256()
+		sha.update(self.password.encode() + salt)
+		hashed_pass = sha.digest()
 
 		data = b"".join((
 			self.buff_class.pack_packet(hashed_pass), # Data is passed as packets for length prefixing
@@ -46,4 +49,4 @@ class ExternalProxyInternalFactory(EWFactory, ReconnectingClientFactory):
 	"""
 	def buildProtocol(self, addr):
 		self.resetDelay() # Reset the reconnect delay
-		return ExternalProxyInternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.buffer_wait)
+		return ExternalProxyInternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.password, self.buffer_wait)

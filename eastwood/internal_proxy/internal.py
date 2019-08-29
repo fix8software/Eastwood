@@ -1,5 +1,6 @@
 from secrets import compare_digest
 from hashlib import sha256
+from quarry.net.protocol import BufferUnderrun
 
 from eastwood.protocols.ew_protocol import EWProtocol
 
@@ -33,11 +34,13 @@ class InternalProxyInternalProtocol(EWProtocol):
 		This packet does not get handled like standard packets to prevent a rogue client from abusing the check
 		"""
 		try:
-			hashed_pass = buff.unpack_packet(self.buff_class)
-			salt = buff.unpack_packet(self.buff_class)
+			hashed_pass = buff.unpack_packet(self.buff_class).read()
+			salt = buff.unpack_packet(self.buff_class).read()
 
 			# Verify hashed pass with salt
-			my_pass = sha256().update(self.password.encode() + salt).digest()
+			sha = sha256()
+			sha.update(self.password.encode() + salt)
+			my_pass = sha.digest()
 
 			if compare_digest(hashed_pass, my_pass):
 				self.authed = True
