@@ -23,13 +23,13 @@ class ExternalProxyExternalProtocol(MCProtocol):
 		self.queue = [] # A queue exists at first to prevent packets from sending when the lan client/other mcprotocol hasn't been created yet
 
 	def connectionMade(self):
+		super().connectionMade()
+
 		# Make sure we are not over the connection limit
 		self.factory.num_connections += 1
 		if self.factory.num_connections > self.factory.max_connections:
 			self.transport.loseConnection() # Kick
 			return
-
-		super().connectionMade()
 
 		# Tell the other mcprotocol
 		try:
