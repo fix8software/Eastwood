@@ -16,15 +16,17 @@ class EWProtocol(BaseProtocol):
 	Base class that contains shared functionality between the two proxy's comm protocols
 	Data sent over is buffered and lz4 compressed
 	"""
-	def __init__(self, factory, buff_class, handle_direction, other_factory, buffer_wait):
+	def __init__(self, factory, buff_class, handle_direction, other_factory, buffer_wait, password):
 		"""
 		Protocol args:
 			factory: factory that made this protocol (subclass of EWFactory)
 			other_factory: the other factory that communicates with this protocol (in this case an instance of MCProtocol)
 			buffer_wait: amount of time to wait before sending buffered packets (in ms)
+			password: password to authenticate with
 		"""
 		super().__init__(factory, buff_class, handle_direction, other_factory)
 		self.buffer_wait = buffer_wait
+		self.password = password # NOTE: Not used by EWProtocol, its subclasses will handle authentication with it
 
 		self.compressor_input_queue = Queue()
 		self.compressor_output_queue = Queue()
@@ -153,7 +155,7 @@ class EWProtocol(BaseProtocol):
 			poem[packet_name] = b"".join([poem[packet_name],
 								self.buff_class.pack_varint(i), # Pack index of packet
 								self.buff_class.pack_uuid(uuid), # Pack uuid of client
-								self.buff_class.pack_packet(buff) # Append buffer as packet
+								self.buff_class.pack_packet(buff) # Append buffer (as packet for length prefixing)
 								])
 
 			packet_data.discard() # Buffer is no longer needed

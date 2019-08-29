@@ -15,7 +15,7 @@ packet_names = [
 	# 	per packet:
 	#		int: the order/index of the packet
 	#		uuid: the user/sender of the packet
-	#		byte array: the packet itself
+	#		bytes: the packet itself
 	("delete_conn", "upstream"),
 	# packet id # 1
 	# fields:
@@ -28,6 +28,11 @@ packet_names = [
 	# packet id # 3
 	# fields:
 	#	uuid: the user/sender to allow sending packets
+	("auth", "upstream"),
+	# packet id # 4
+	# fields:
+	#	bytes: sha256-hashed salted password
+	#	bytes: the salt
 ]
 
 """

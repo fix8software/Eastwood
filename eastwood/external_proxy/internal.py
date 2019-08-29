@@ -1,3 +1,5 @@
+from hashlib import sha256
+from secrets import token_bytes
 from twisted.internet.protocol import ReconnectingClientFactory
 
 from eastwood.factories.ew_factory import EWFactory
@@ -7,6 +9,24 @@ class ExternalProxyInternalProtocol(EWProtocol):
 	"""
 	Handles sending data as buffered "poems" from clients to the internal proxy and vice versa
 	"""
+	def connectionMade(self):
+		"""
+		Send auth packet, otherwise packets will be dropped
+		"""
+		super().connectionMade()
+
+		# Hash password
+		salt = token_bytes()
+		hashed_pass = sha256().update(self.password.encode() + salt).digest()
+
+		data = b"".join((
+			self.buff_class.pack_packet(hashed_pass), # Data is passed as packets for length prefixing
+			self.buff_class.pack_packet(salt)
+		))
+
+		self.send_packet("auth", data) # Send
+		self.logger.info("Sent auth packet")
+
 	def packet_recv_release_queue(self, buff):
 		"""
 		Allow client with packed uuid to send packets
