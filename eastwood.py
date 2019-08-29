@@ -1,9 +1,10 @@
 import logging
-from argparse import ArgumentParser
+import toml, time, random, string, sys
 from eastwood import external_proxy, internal_proxy
 from multiprocessing import set_start_method
 from twisted.internet import reactor
 from twisted.python import log
+from pathlib import Path
 
 def parse_ip_port(string):
 	"""
@@ -18,38 +19,106 @@ def parse_ip_port(string):
 		print("Invalid IP:PORT provided!")
 		exit()
 
-if __name__ == "__main__":
-	parser = ArgumentParser(description="2x proxies to lower minecraft server net usage by dumping the work to a cheapo vps instead")
-	parser.add_argument("type", type=str, choices=["internal", "external", "both"], help="proxy(ies) to start")
-	parser.add_argument("-d", "--debug", action="store_const", const=logging.INFO, default=logging.WARN, help="enable debug for twisted")
-	parser.add_argument("-iip", "--internal_proxy_ip", type=str, default="0.0.0.0:41429", metavar="IP:PORT", help="internal proxy's bind address and port (default: 0.0.0.0:41429)")
-	parser.add_argument("-eip", "--external_proxy_ip", type=str, default="127.0.0.1:37721", metavar="IP:PORT", help="external proxy's bind address and port (default: 127.0.0.1:37721)")
-	parser.add_argument("-r", "--remote", type=str, default="127.0.0.1:41429", metavar="IP:PORT", help="internal proxy's (used by external proxy) address and port (default: 127.0.0.1:41429)")
-	parser.add_argument("-m", "--mc_server", type=str, default="127.0.0.1:25565", metavar="IP:PORT", help="minecraft server's address and port (default: 127.0.0.1:25565)")
-	parser.add_argument("-b", "--buffer_wait", type=int, default=50, metavar="MS", help="time to wait before sending buffered packets in ms (default: 50 ms)")
-	parser.add_argument("-p", "--protocol", type=int, default=498, metavar="VERSION", help="protocol specification to use. should be the same as the minecraft server's (default: 498 aka 1.14.4)")
-	parser.add_argument("-f", "--forward_ip", action="store_true", help="if set, forwards the true ip to the server (for bungeecord)")
-	parser.add_argument("-l", "--player_limit", type=int, default=25, metavar="COUNT", help="max amount of players allowed to connect to the external proxy (default: 25)")
-	parser.add_argument("-s", "--secret", type=str, default="hunter2", metavar="PASSWORD", help="password for authentication (default: hunter2)")
-	args = parser.parse_args()
+def main():
+	try:
+		config_location = sys.argv[1]
+	except IndexError:
+		config_location = 'config.toml'
+		
+	config_file = Path(config_location)
+	if not config_file.is_file():
+		with open(config_location, 'w+') as j:
+			j.write("""# {2} Configuration File - TOML
+# template generation timestamp: {0}
+
+# Please note that removal of any options in this file will cause
+# significant unhandled exceptions. Regardless of what your prox(ies)
+# are doing, you will need every option in this config file to be set
+# to something.
+
+title = "{2} Configuration File"
+
+[global]
+# Print debug info from modules like Twisted to the terminal.
+# You can disable this if you really don't want this information, but
+# it may make it harder to fix and understand out issues if they happen.
+debug = true
+
+# Specifies which proxies to start. (can be both, internal or external)
+# Internal - {2} to Server, External - {2} to Client
+# Both - Server to {2} to {2} to Client. Used only for debug
+# and  general testing purposes.
+type = "both"
+
+# Authentication secret. Important if you're not using {2} across
+# a VPN or you're just generally exposing {2} to the public in any
+# way.
+secret = "{1}"
+
+# How long to buffer Minecraft packets into poems for, in milliseconds.
+# Setting this to a higher value may improve bandwidth savings, but
+# will increase ping.
+buffer_ms = 25
+
+# Protocol version to use for Minecraft packets. To see the protocol
+# version of your version of Minecraft, look here...
+# https://wiki.vg/Protocol_version_numbers
+protocol_version = 498
+
+# Whether or not to use IP forwarding. This is usually required for
+# Bungeecord, Waterfall or Velocity.
+ip_forwarding = true
+
+[internal]
+# Internal proxy bind address.
+bind = "127.0.0.1:41429"
+
+# Minecraft server address to connect to.
+minecraft = "127.0.0.1:25565"
+
+[external]
+# External proxy bind address. This is what Velocity, Bungeecord
+# or Waterfall should connect to. Do not connect directly, and always
+# bind to 127.0.0.1 to prevent connections from anywhere other than
+# the local machine.
+bind = "127.0.0.1:37721"
+
+# Internal proxy to connect to. If you're using anything other than
+# the "both" mode, you're likely going to want to change this from its
+# default value of 127.0.0.1:41429.
+internal = "127.0.0.1:41429"
+
+# External proxy player/connection limit. This is important, as you can
+# utilize this with services like Velocity in order to create a really
+# funky load-balancing system.
+player_limit = 65535
+""".format(time.time(), ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(16)), 'Eastwood'))
+		print('Config file generated at '+config_location+', please modify it.')
+		return
+
+	with open(config_location, 'r') as j:
+		config = toml.loads(j.read())
 
 	# Tell twisted to use the standard logging module
 	observer = log.PythonLoggingObserver()
 	observer.start()
-	logging.getLogger().setLevel(args.debug)
+	logging.getLogger().setLevel((lambda x: logging.WARN if False else logging.INFO)(config['global']['debug']))
 
 	# Be sure processes are forked, not spawned
 	set_start_method("fork")
 
 	# Start proxies
-	if args.type in ("internal", "both"):
-		ip, port = parse_ip_port(args.internal_proxy_ip)
-		mc_ip, mc_port = parse_ip_port(args.mc_server)
-		internal_proxy.create(args.protocol, ip, port, mc_ip, mc_port, args.buffer_wait, args.secret, args.forward_ip)
-	if args.type in ("external", "both"):
-		ip, port = parse_ip_port(args.external_proxy_ip)
-		internal_ip, internal_port = parse_ip_port(args.remote)
-		external_proxy.create(args.protocol, ip, port, internal_ip, internal_port, args.secret, args.buffer_wait, args.player_limit)
+	if config['global']['type'] in ("internal", "both"):
+		ip, port = parse_ip_port(config['internal']['bind'])
+		mc_ip, mc_port = parse_ip_port(config['internal']['minecraft'])
+		internal_proxy.create(config['global']['protocol_version'], ip, port, mc_ip, mc_port, config['global']['buffer_ms'], config['global']['secret'], config['global']['ip_forwarding'])
+	if config['global']['type'] in ("external", "both"):
+		ip, port = parse_ip_port(config['external']['bind'])
+		internal_ip, internal_port = parse_ip_port(config['external']['internal'])
+		external_proxy.create(config['global']['protocol_version'], ip, port, internal_ip, internal_port, config['global']['secret'], config['global']['buffer_ms'], config['external']['player_limit'])
 
 	# Run proxy with twisted
 	reactor.run()
+
+if __name__ == "__main__":
+	main()
