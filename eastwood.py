@@ -1,5 +1,5 @@
 import logging
-import toml, datetime, secrets, string, sys
+import toml, datetime, secrets, sys
 from eastwood import external_proxy, internal_proxy
 from multiprocessing import set_start_method
 from twisted.internet import reactor
