@@ -10,7 +10,7 @@ from eastwood.internal_proxy.external import InternalProxyExternalFactory
 from eastwood.internal_proxy.internal import InternalProxyInternalProtocol
 from eastwood.server_pinger import ServerPingerFactory
 
-def create(protocol_version, host, port, mc_host, mc_port, buffer_wait, ip_forward):
+def create(protocol_version, host, port, mc_host, mc_port, buffer_wait, password, ip_forward):
 	"""
 	Create an instance of InternalProxyInternalProtocol which communicates with the external proxy
 	Create an instance of InternalProxyExternalFactory which controls the clients to the real server
@@ -21,10 +21,11 @@ def create(protocol_version, host, port, mc_host, mc_port, buffer_wait, ip_forwa
 		mc_host: minecraft server's ip
 		mc_port: minecraft server's port
 		buffer_wait: amount of time to wait before sending buffered packets (in ms)
+		password: password to authenticate with
 		ip_forward: if true, forward the true ip
 	"""
 	# Create an instance of EWFactory with   which communicates with the external proxy
-	internal_factory = EWFactory(protocol_version, "upstream", buffer_wait)
+	internal_factory = EWFactory(protocol_version, "upstream", buffer_wait, password)
 	internal_factory.protocol = InternalProxyInternalProtocol
 
 	# Create an instance of InternalProxyExternalFactory which controls the clients to the real server

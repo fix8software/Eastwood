@@ -30,6 +30,7 @@ if __name__ == "__main__":
 	parser.add_argument("-p", "--protocol", type=int, default=498, metavar="VERSION", help="protocol specification to use. should be the same as the minecraft server's (default: 498 aka 1.14.4)")
 	parser.add_argument("-f", "--forward_ip", action="store_true", help="if set, forwards the true ip to the server (for bungeecord)")
 	parser.add_argument("-l", "--player_limit", type=int, default=25, metavar="COUNT", help="max amount of players allowed to connect to the external proxy (default: 25)")
+	parser.add_argument("-s", "--secret", type=str, default="hunter2", metavar="PASSWORD", help="password for authentication (default: hunter2)")
 	args = parser.parse_args()
 
 	# Tell twisted to use the standard logging module
@@ -44,11 +45,11 @@ if __name__ == "__main__":
 	if args.type in ("internal", "both"):
 		ip, port = parse_ip_port(args.internal_proxy_ip)
 		mc_ip, mc_port = parse_ip_port(args.mc_server)
-		internal_proxy.create(args.protocol, ip, port, mc_ip, mc_port, args.buffer_wait, args.forward_ip)
+		internal_proxy.create(args.protocol, ip, port, mc_ip, mc_port, args.buffer_wait, args.secret, args.forward_ip)
 	if args.type in ("external", "both"):
 		ip, port = parse_ip_port(args.external_proxy_ip)
 		internal_ip, internal_port = parse_ip_port(args.remote)
-		external_proxy.create(args.protocol, ip, port, internal_ip, internal_port, args.buffer_wait, args.player_limit)
+		external_proxy.create(args.protocol, ip, port, internal_ip, internal_port, args.secret, args.buffer_wait, args.player_limit)
 
 	# Run proxy with twisted
 	reactor.run()

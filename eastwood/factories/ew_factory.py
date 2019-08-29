@@ -24,4 +24,4 @@ class EWFactory(BaseFactory):
 		self.instance = None # Only one protcol can exist in EWFactory
 
 	def buildProtocol(self, addr):
-		return self.protocol(self, self.buff_class, self.handle_direction, self.other_factory, self.buffer_wait)
+		return self.protocol(self, self.buff_class, self.handle_direction, self.other_factory, self.buffer_wait, self.password)
