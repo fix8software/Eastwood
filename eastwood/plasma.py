@@ -4,11 +4,11 @@ Naphtha's craaazy parallel compression class for high speed tasks such as mass n
 from psutil import cpu_count
 from multiprocessing.pool import ThreadPool
 from threading import Thread
-import zstd, time, os
+import zstd, time, os, hashlib
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
-SIZE_BYTES = 4
+SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
 
@@ -18,7 +18,7 @@ class ParallelCompressionInterface(object):
 	__MIN_LEVEL = 1
 	__BUFFER_TIME_MS = 10
 	__TOO_LOW_MAX = 8
-	__UNLEARN_INTERVAL_SECONDS = 120
+	__UNLEARN_INTERVAL_SECONDS = 180
 	__ATHS_START = 0x003FFFFF
 	
 	"""
