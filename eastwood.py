@@ -1,5 +1,5 @@
 import logging
-import toml, time, random, string, sys
+import toml, datetime, secrets, string, sys
 from eastwood import external_proxy, internal_proxy
 from multiprocessing import set_start_method
 from twisted.internet import reactor
@@ -24,12 +24,12 @@ def main():
 		config_location = sys.argv[1]
 	except IndexError:
 		config_location = 'config.toml'
-		
+
 	config_file = Path(config_location)
 	if not config_file.is_file():
 		with open(config_location, 'w+') as j:
 			j.write("""# {2} Configuration File - TOML
-# template generation timestamp: {0}
+# template generation timestamp: {0} UTC
 
 # Please note that removal of any options in this file will cause
 # significant unhandled exceptions. Regardless of what your prox(ies)
@@ -92,7 +92,7 @@ internal = "127.0.0.1:41429"
 # utilize this with services like Velocity in order to create a really
 # funky load-balancing system.
 player_limit = 65535
-""".format(time.time(), ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(16)), 'Eastwood'))
+""".format(datetime.datetime.now(), secrets.token_urlsafe(25), 'Eastwood'))
 		print('Config file generated at '+config_location+', please modify it.')
 		return
 
