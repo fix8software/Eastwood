@@ -1,5 +1,5 @@
 """
-Threaded classes which offload the work of compression and decompression from EWProtocol and its subclasses
+Threaded classes which offload the work of blocking data handling from EWProtocol and its subclasses
 """
 import logging
 from queue import Empty, Queue
