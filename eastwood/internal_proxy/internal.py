@@ -19,15 +19,15 @@ class InternalProxyInternalProtocol(EWProtocol):
 		super().__init__(factory, buff_class, handle_direction, other_factory, buffer_wait, password)
 		self.authed = False
 
-	def packet_received(self, buff, name):
+	def parse_decrypted_packet(self, data, name):
 		"""
 		Treat all packets as an auth packet until the packet has been authenticated
 		"""
 		if not self.authed:
-			self.packet_special_auth(buff)
+			self.packet_special_auth(self.buff_class(data))
 			return
 
-		super().packet_received(buff, name)
+		super().parse_decrypted_packet(data, name)
 
 	def packet_special_auth(self, buff):
 		"""

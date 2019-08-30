@@ -10,6 +10,8 @@ from eastwood.ew_packet import packet_ids, packet_names
 # A bunch of variables that haven't become arguments.
 COMP_THREADS = 1
 DEP_THREADS = 1
+ENC_THREADS = 1
+DEC_THREADS = 1
 
 class EWProtocol(BaseProtocol):
 	"""
@@ -28,8 +30,33 @@ class EWProtocol(BaseProtocol):
 		self.buffer_wait = buffer_wait
 		self.password = password # NOTE: Not used by EWProtocol, its subclasses will handle authentication with it
 
-		self.compression_handler = HandlerManager(COMP_THREADS, ParallelCompressionInterface, "compress", reactor.callFromThread, callback_args=(self.send_packet, "poem"))
-		self.depression_handler = HandlerManager(DEP_THREADS, ParallelCompressionInterface, "decompress", reactor.callFromThread, callback_args=(self.parse_packet_recv_poem,))
+		self.compression_handler = HandlerManager(COMP_THREADS,
+											ParallelCompressionInterface,
+											"compress",
+											reactor.callFromThread,
+											callback_args=(self.send_packet, "poem")
+											)
+		self.depression_handler = HandlerManager(DEP_THREADS,
+											ParallelCompressionInterface,
+											"decompress",
+											reactor.callFromThread,
+											callback_args=(self.parse_packet_recv_poem,)
+											)
+
+		self.encryption_handler = HandlerManager(ENC_THREADS,
+											ParallelAESInterface,
+											"encrypt",
+											reactor.callFromThread,
+											callback_args=(self.parse_encrypted_packet,),
+											plasma_args=(bytes(0),)
+											)
+		self.decryption_handler = HandlerManager(DEC_THREADS,
+											ParallelAESInterface,
+											"decrypt",
+											reactor.callFromThread,
+											callback_args=(self.parse_decrypted_packet,),
+											plasma_args=(bytes(0),)
+											)
 
 	def connectionMade(self):
 		"""
@@ -44,6 +71,8 @@ class EWProtocol(BaseProtocol):
 		self.factory.instance = self
 
 		# Start handlers
+		self.encryption_handler.start()
+		self.decryption_handler.start()
 		self.compression_handler.start()
 		self.depression_handler.start()
 
@@ -57,8 +86,24 @@ class EWProtocol(BaseProtocol):
 		self.factory.instance = None
 
 		# Stop handlers
+		self.encryption_handler.stop()
+		self.decryption_handler.stop()
 		self.compression_handler.stop()
 		self.depression_handler.stop()
+
+	def packet_received(self, buff, name):
+		"""
+		Decrypt the packets
+		"""
+		self.decryption_handler.add_to_queue(buff.read(), name)
+		buff.discard()
+
+	def parse_decrypted_packet(self, data, name):
+		"""
+		Pass to super with the right argument order
+		Lambdas don't like supers :(
+		"""
+		super().packet_received(self.buff_class(data), name)
 
 	def get_packet_name(self, id):
 		"""
@@ -102,6 +147,19 @@ class EWProtocol(BaseProtocol):
 
 		return info[0]
 
+	def send_packet(self, name, *data):
+		"""
+		Encrypts packet before sending it
+		"""
+		self.encryption_handler.add_to_queue(b"".join(data), name)
+
+	def parse_encrypted_packet(self, data, name):
+		"""
+		Pass to super with the right argument order
+		Lambdas don't like supers :(
+		"""
+		super().send_packet(name, data)
+
 	def send_buffered_packets(self):
 		"""
 		Sends all packets in self.input_buffer to the other proxy as a poem
@@ -121,10 +179,10 @@ class EWProtocol(BaseProtocol):
 			buff = self.buff_class.pack_string(packet_name) + packet_data.buff # Prepend packet name to buffer
 
 			poem[packet_name] = b"".join([poem[packet_name],
-								self.buff_class.pack_varint(i), # Pack index of packet
-								self.buff_class.pack_uuid(uuid), # Pack uuid of client
-								self.buff_class.pack_packet(buff) # Append buffer (as packet for length prefixing)
-								])
+									self.buff_class.pack_varint(i), # Pack index of packet
+									self.buff_class.pack_uuid(uuid), # Pack uuid of client
+									self.buff_class.pack_packet(buff) # Append buffer (as packet for length prefixing)
+									])
 
 			packet_data.discard() # Buffer is no longer needed
 

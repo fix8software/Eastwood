@@ -44,11 +44,15 @@ class HandlerManager:
 		# Start outbox handler
 		self.__outbox_handler.start()
 
-	def add_to_queue(self, data):
+	def add_to_queue(self, data, *args, **kwargs):
 		"""
 		Adds data to queue, will be put into a tuple and prepended with an index
+		Args:
+			data: data to add
+			*args: args to be passed to the callback
+			**kwargs: kwargs to be passed to the callback
 		"""
-		self.__input_queue.put_nowait((self.__index, data))
+		self.__input_queue.put_nowait((self.__index, data, args, kwargs))
 		self.__index += 1 # Increment index
 
 	def stop(self):
@@ -71,7 +75,7 @@ class OutboxHandlerThread(Thread):
 	def __init__(self, queue, callback, *args, **kwargs):
 		"""
 		Args:
-			queue: outbox queue to handle data from (accepts tuple of index, data)
+			queue: outbox queue to handle data from (accepts tuple of index, data, args, kwargs)
 			callback: callback to run after handling data
 			*args: args to prepend to callback
 			**kwargs: kwargs to prepend to callback
@@ -106,7 +110,7 @@ class OutboxHandlerThread(Thread):
 
 			# Packet is next to be sent
 			if packet_tuple[1]:
-				self.run_callback(packet_tuple[1]) # Send it
+				self.run_callback(packet_tuple[1], *packet_tuple[2], **packet_tuple[3]) # Send it
 			self.index += 1 # Increment index
 
 			# Send packets that were waiting for this packet
@@ -120,7 +124,7 @@ class OutboxHandlerThread(Thread):
 				del self.wait_list[self.index]
 
 				if patient[1]:
-					self.run_callback(patient[1]) # Send it
+					self.run_callback(patient[1], *patient[2], **patient[3]) # Send it
 				self.index += 1 # Increment index
 
 			self.queue.task_done()
@@ -135,10 +139,10 @@ class InboxHandlerThread(Thread):
 	"""
 	Threaded class handles data from an input queue
 	"""
-	def __init__(self, input_queue, output_queue, plasma, func_name):
+	def __init__(self, input_queue, output_queue, plasma, func_name, *args, **kwargs):
 		"""
 		Args:
-			input_queue: queue to use for input (accepts tuple of index, data)
+			input_queue: queue to use for input (accepts tuple of index, data, args, kwargs)
 			output_queue: queue to output to
 			plasma: plasma interface to use
 			func_name: name of function from plasma to handle data with
@@ -156,7 +160,7 @@ class InboxHandlerThread(Thread):
 		self.input_queue = input_queue # Input queue
 		self.output_queue = output_queue # Output queue
 
-		self.plasma = plasma() # Plasma instance
+		self.plasma = plasma(*args, **kwargs) # Plasma instance
 		self.handle_func = getattr(self.plasma, func_name)
 
 	def run(self):
@@ -172,5 +176,5 @@ class InboxHandlerThread(Thread):
 				self.logger.warn("Packet Index #{} thrown out!".format(packet_tuple[0]))
 				new_data = None
 
-			self.output_queue.put_nowait((packet_tuple[0], new_data))
+			self.output_queue.put_nowait((packet_tuple[0], new_data, packet_tuple[2], packet_tuple[3]))
 			self.input_queue.task_done()
