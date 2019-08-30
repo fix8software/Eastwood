@@ -1,7 +1,6 @@
-from hashlib import sha256
-from secrets import token_bytes
 from twisted.internet.protocol import ReconnectingClientFactory
 
+from eastwood.plasma import IteratedSaltedHash
 from eastwood.factories.ew_factory import EWFactory
 from eastwood.protocols.ew_protocol import EWProtocol
 
@@ -16,11 +15,7 @@ class ExternalProxyInternalProtocol(EWProtocol):
 		super().connectionMade()
 
 		# Hash password
-		salt = token_bytes()
-
-		sha = sha256()
-		sha.update(self.password.encode() + salt)
-		hashed_pass = sha.digest()
+		hashed_pass, salt = IteratedSaltedHash(self.password.encode())
 
 		data = b"".join((
 			self.buff_class.pack_packet(hashed_pass), # Data is passed as packets for length prefixing

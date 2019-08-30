@@ -1,7 +1,6 @@
-from secrets import compare_digest
-from hashlib import sha256
 from quarry.net.protocol import BufferUnderrun
 
+from eastwood.plasma import IteratedSaltedHash
 from eastwood.protocols.ew_protocol import EWProtocol
 
 class InternalProxyInternalProtocol(EWProtocol):
@@ -39,11 +38,9 @@ class InternalProxyInternalProtocol(EWProtocol):
 			salt = buff.unpack_packet(self.buff_class).read()
 
 			# Verify hashed pass with salt
-			sha = sha256()
-			sha.update(self.password.encode() + salt)
-			my_pass = sha.digest()
+			real_hash, salt = IteratedSaltedHash(self.password.encode(), salt)
 
-			if compare_digest(hashed_pass, my_pass):
+			if real_hash == hashed_pass:
 				self.authed = True
 				self.logger.info("Authenticated!") # Successfully authenticated!
 				return
