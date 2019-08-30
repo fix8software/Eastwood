@@ -28,7 +28,7 @@ def main():
 	config_file = Path(config_location)
 	if not config_file.is_file():
 		with open(config_location, 'w+') as j:
-			j.write("""# {2} Configuration File - TOML
+			j.write("""# {3} Configuration File - TOML
 # template generation timestamp: {0} UTC
 
 # Please note that removal of any options in this file will cause
@@ -36,7 +36,7 @@ def main():
 # are doing, you will need every option in this config file to be set
 # to something.
 
-title = "{2} Configuration File"
+title = "{3} Configuration File"
 
 [global]
 # Print debug info from modules like Twisted to the terminal.
@@ -45,15 +45,21 @@ title = "{2} Configuration File"
 debug = true
 
 # Specifies which proxies to start. (can be both, internal or external)
-# Internal - {2} to Server, External - {2} to Client
-# Both - Server to {2} to {2} to Client. Used only for debug
+# Internal - {3} to Server, External - {3} to Client
+# Both - Server to {3} to {3} to Client. Used only for debug
 # and  general testing purposes.
 type = "both"
 
-# Authentication secret. Important if you're not using {2} across
-# a VPN or you're just generally exposing {2} to the public in any
-# way.
-secret = "{1}"
+# Proxy authentication password. Important if you're not using {3} across
+# a VPN or you're just generally exposing {3} to the public in any
+# way. Used to authenticate proxy and allow packets to be registered
+# by the other proxy.
+password = "{1}"
+
+# Shared AES secret. Also important if you're not using {3} across
+# a VPN or you're just generally exposing {3} to the public in any
+# way. This is used to keep traffic encrypted and prevent a MITM attack
+secret = "{2}"
 
 # How long to buffer Minecraft packets into poems for, in milliseconds.
 # Setting this to a higher value may improve bandwidth savings, but
@@ -92,7 +98,7 @@ internal = "127.0.0.1:41429"
 # utilize this with services like Velocity in order to create a really
 # funky load-balancing system.
 player_limit = 65535
-""".format(datetime.datetime.now(), secrets.token_urlsafe(25), 'Eastwood'))
+""".format(datetime.datetime.now(), secrets.token_urlsafe(25), secrets.token_urlsafe(25), 'Eastwood'))
 		print('Config file generated at '+config_location+', please modify it.')
 		return
 
@@ -111,11 +117,11 @@ player_limit = 65535
 	if config['global']['type'] in ("internal", "both"):
 		ip, port = parse_ip_port(config['internal']['bind'])
 		mc_ip, mc_port = parse_ip_port(config['internal']['minecraft'])
-		internal_proxy.create(config['global']['protocol_version'], ip, port, mc_ip, mc_port, config['global']['buffer_ms'], config['global']['secret'], config['global']['ip_forwarding'])
+		internal_proxy.create(config['global']['protocol_version'], ip, port, mc_ip, mc_port, config['global']['buffer_ms'], config['global']['password'], config['global']['secret'], config['global']['ip_forwarding'])
 	if config['global']['type'] in ("external", "both"):
 		ip, port = parse_ip_port(config['external']['bind'])
 		internal_ip, internal_port = parse_ip_port(config['external']['internal'])
-		external_proxy.create(config['global']['protocol_version'], ip, port, internal_ip, internal_port, config['global']['secret'], config['global']['buffer_ms'], config['external']['player_limit'])
+		external_proxy.create(config['global']['protocol_version'], ip, port, internal_ip, internal_port, config['global']['buffer_ms'], config['global']['password'], config['global']['secret'], config['external']['player_limit'])
 
 	# Run proxy with twisted
 	reactor.run()

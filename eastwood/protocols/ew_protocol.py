@@ -18,13 +18,14 @@ class EWProtocol(BaseProtocol):
 	Base class that contains shared functionality between the two proxy's comm protocols
 	Data sent over is buffered and lz4 compressed
 	"""
-	def __init__(self, factory, buff_class, handle_direction, other_factory, buffer_wait, password):
+	def __init__(self, factory, buff_class, handle_direction, other_factory, buffer_wait, password, secret):
 		"""
 		Protocol args:
 			factory: factory that made this protocol (subclass of EWFactory)
 			other_factory: the other factory that communicates with this protocol (in this case an instance of MCProtocol)
 			buffer_wait: amount of time to wait before sending buffered packets (in ms)
 			password: password to authenticate with
+			secret: aes secret to use
 		"""
 		super().__init__(factory, buff_class, handle_direction, other_factory)
 		self.buffer_wait = buffer_wait
@@ -48,14 +49,14 @@ class EWProtocol(BaseProtocol):
 											"encrypt",
 											reactor.callFromThread,
 											callback_args=(self.parse_encrypted_packet,),
-											plasma_args=(bytes(0),)
+											plasma_args=(secret.encode(),)
 											)
 		self.decryption_handler = HandlerManager(DEC_THREADS,
 											ParallelAESInterface,
 											"decrypt",
 											reactor.callFromThread,
 											callback_args=(self.parse_decrypted_packet,),
-											plasma_args=(bytes(0),)
+											plasma_args=(secret.encode(),)
 											)
 
 	def connectionMade(self):

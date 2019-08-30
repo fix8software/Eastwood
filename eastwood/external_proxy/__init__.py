@@ -7,7 +7,7 @@ from twisted.internet import reactor
 from eastwood.external_proxy.external import ExternalProxyExternalFactory
 from eastwood.external_proxy.internal import ExternalProxyInternalFactory
 
-def create(protocol_version, host, port, internal_host, internal_port, buffer_wait, password, max_connections):
+def create(protocol_version, host, port, internal_host, internal_port, buffer_wait, password, secret, max_connections):
 	"""
 	Does two things:
 	Creates an instance of ExternalProxyInternalFactory which communicates with the internal proxy
@@ -20,10 +20,11 @@ def create(protocol_version, host, port, internal_host, internal_port, buffer_wa
 		internal_port: internal proxy's port
 		buffer_wait: amount of time to wait before sending buffered packets (in ms)
 		password: password to authenticate with
+		secret: aes secret to use
 		max_connections: max amount of clients to accept before kicking
 	"""
 	# Create an instance of ExternalProxyInternalFactory which communicates with the internal proxy as a client
-	internal_factory = ExternalProxyInternalFactory(protocol_version, "downstream", buffer_wait, password)
+	internal_factory = ExternalProxyInternalFactory(protocol_version, "downstream", buffer_wait, password, secret)
 
 	# Creates an instance of ExternalProxyExternalFactory which communicates to the clients/bungee
 	server = ExternalProxyExternalFactory(protocol_version, "upstream", max_connections)

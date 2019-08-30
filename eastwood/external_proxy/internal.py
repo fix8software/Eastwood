@@ -49,4 +49,4 @@ class ExternalProxyInternalFactory(EWFactory, ReconnectingClientFactory):
 	"""
 	def buildProtocol(self, addr):
 		self.resetDelay() # Reset the reconnect delay
-		return ExternalProxyInternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.password, self.buffer_wait)
+		return ExternalProxyInternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.buffer_wait, self.password, self.secret)
