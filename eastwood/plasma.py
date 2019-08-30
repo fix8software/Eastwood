@@ -181,23 +181,25 @@ class ParallelCompressionInterface(object):
 		return self.__decompress(input)	
 
 class _SingleThreadedAESCipher(object):
+	__IV_SIZE = 16
+	__MODE = AES.MODE_GCM
+	__AES_NI = True
+	
 	"""
 	This class must not be used outside of the Plasma library.
 	"""
 	def __init__(self, key: bytes):
 		self.key = self.__hash_iterations(key)
-		self.iv_size = 16
-		self.mode = AES.MODE_GCM
 
 	def encrypt(self, raw: bytes) -> bytes:
-		iv = Random.new().read(self.iv_size)
-		cipher = AES.new(self.key, self.mode, iv, use_aesni=True)
+		iv = Random.new().read(self.__IV_SIZE)
+		cipher = AES.new(self.key, self.__MODE, iv, use_aesni=self.__AES_NI)
 		return iv + cipher.encrypt(raw)
 
 	def decrypt(self, enc: bytes) -> bytes:
-		iv = enc[:self.iv_size]
-		cipher = AES.new(self.key, self.mode, iv, use_aesni=True)
-		return cipher.decrypt(enc[self.iv_size:])
+		iv = enc[:self.__IV_SIZE]
+		cipher = AES.new(self.key, self.__MODE, iv, use_aesni=self.__AES_NI)
+		return cipher.decrypt(enc[self.__IV_SIZE:])
 		
 	@staticmethod
 	def __hash_iterations(b: bytes, i: int = 0xFFFF):
