@@ -1,14 +1,22 @@
 """
-Naphtha's craaazy parallel compression class for high speed tasks such as mass network transmission
+P L A S M A
+
+Naphtha's library for parallel, timed operations such as Compression
+and Encryption.
 """
+from Crypto import Random
+from Crypto.Cipher import AES
 from psutil import cpu_count
 from multiprocessing.pool import ThreadPool
 from threading import Thread
-import zstd, time, os
+import zstd, time, os, hashlib
+
+# These are the only classes that ought to be used with Plasma publicly.
+__all__ = ["ParallelAESInterface", "ParallelCompressionInterface"]
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
-SIZE_BYTES = 4
+SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
 
@@ -18,7 +26,7 @@ class ParallelCompressionInterface(object):
 	__MIN_LEVEL = 1
 	__BUFFER_TIME_MS = 10
 	__TOO_LOW_MAX = 8
-	__UNLEARN_INTERVAL_SECONDS = 120
+	__UNLEARN_INTERVAL_SECONDS = 180
 	__ATHS_START = 0x003FFFFF
 	
 	"""
@@ -72,23 +80,27 @@ class ParallelCompressionInterface(object):
 				self.__average_too_high_size = self.__unlearn_setback
 			time.sleep(self.__UNLEARN_INTERVAL_SECONDS)
 
-	def __level_arguments(self, chunk: bytes, level: int) -> tuple:
+	@staticmethod
+	def __level_arguments(chunk: bytes, level: int) -> tuple:
 		"""
 		Private function to automatically prepare arguments for internal compression.
 		"""
 		return (chunk, level)
 
-	def __chunks(self, l, n):
+	@staticmethod
+	def __chunks(l, n):
 		"""
 		Quickest way to break up compression data into multiple chunks of bytes.
 		"""
 		for i in range(0, len(l), n):
 			yield l[i:i+n]
 
-	def __int_in(self, i: int, s: int = META_BYTES):
+	@staticmethod
+	def __int_in(i: int, s: int = META_BYTES):
 		return i.to_bytes(s, byteorder=BYTE_ORDER)
 
-	def __int_out(self, i: bytes):
+	@staticmethod
+	def __int_out(i: bytes):
 		return int.from_bytes(i, byteorder=BYTE_ORDER)
 
 	def compress(self, input: bytes, level: int = -1) -> bytes:
@@ -106,7 +118,7 @@ class ParallelCompressionInterface(object):
 
 		startt = time.time()
 		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.__internal_node_count)))))
-		chunks = self.__pool.map(_internal_compression, [self.__level_arguments(c, level) for c in chunks])
+		chunks = self.__pool.map(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
 		
 		msec = ((time.time() - startt) * 1000)
@@ -150,27 +162,121 @@ class ParallelCompressionInterface(object):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 
-		return b''.join(self.__pool.map(_internal_decompression, chunks))
+		return b''.join(self.__pool.map(self.__internal_decompression, chunks))
 
-# These methods are not stored in a class in order to make them easier to access for multiple processes
-def _compress(input: bytes, level: int = 6) -> bytes:
-	return zstd.compress(input, level)
+	@staticmethod
+	def __compress(input: bytes, level: int = 6) -> bytes:
+		return zstd.compress(input, level)
 
-def _decompress(input: bytes) -> bytes:
-	return zstd.decompress(input)
+	@staticmethod
+	def __decompress(input: bytes) -> bytes:
+		return zstd.decompress(input)
 
-def _internal_compression(args) -> bytes:
-	capsule = _compress(args[0], args[1])
+	def __internal_compression(self, args) -> bytes:
+		capsule = self.__compress(args[0], args[1])
 
-	return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
+		return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
+	
+	def __internal_decompression(self, input: bytes) -> bytes:
+		return self.__decompress(input)	
 
-def _internal_decompression(input: bytes) -> bytes:
-	return _decompress(input)
+class _SingleThreadedAESCipher(object):
+	"""
+	This class must not be used outside of the Plasma library.
+	"""
+	def __init__(self, key: bytes):
+		self.key = self.__hash_iterations(key)
+		self.iv_size = 16
+		self.mode = AES.MODE_GCM
+
+	def encrypt(self, raw: bytes) -> bytes:
+		iv = Random.new().read(self.iv_size)
+		cipher = AES.new(self.key, self.mode, iv, use_aesni=True)
+		return iv + cipher.encrypt(raw)
+
+	def decrypt(self, enc: bytes) -> bytes:
+		iv = enc[:self.iv_size]
+		cipher = AES.new(self.key, self.mode, iv, use_aesni=True)
+		return cipher.decrypt(enc[self.iv_size:])
+		
+	@staticmethod
+	def __hash_iterations(b: bytes, i: int = 0xFFFF):
+		for _ in range(i):
+			b = hashlib.sha256(b).digest()
+		return b
+
+class ParallelAESInterface(_SingleThreadedAESCipher):
+	"""
+	Non-threadsafe class that automatically spawns processes for continued use.
+	"""
+	def __init__(self, key: bytes, nodes: int = cpu_count()):
+		"""
+		Args:
+			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
+		"""
+		super().__init__(key)
+		
+		self.__pool = ThreadPool(nodes)
+		self.__internal_node_count = nodes
+		
+	def __encapsulated_encryption(self, raw: bytes) -> bytes:
+		capsule = super().encrypt(raw)
+		
+		return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
+		
+	def encrypt(self, raw: bytes) -> bytes:
+		"""
+		Main encryption function.
+		Args:
+			raw: Bytes to encrypt
+		"""
+		chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / self.__internal_node_count)))))
+		chunks = self.__pool.map(self.__encapsulated_encryption, chunks)
+		return b''.join(chunks)
+		
+	def decrypt(self, enc: bytes) -> bytes:
+		"""
+		Main decryption function.
+		Args:
+			enc: Bytes to decrypt
+		"""
+		chunks = []
+		while len(enc) > 0:
+			chunk_length = int.from_bytes(enc[:SIZE_BYTES], byteorder=BYTE_ORDER)
+			chunks.append(enc[SIZE_BYTES:SIZE_BYTES+chunk_length])
+			enc = enc[SIZE_BYTES+chunk_length:]
+
+		return b''.join(self.__pool.map(super().decrypt, chunks))
+	
+	@staticmethod
+	def __chunks(l, n):
+		for i in range(0, len(l), n):
+			yield l[i:i+n]
 
 if __name__ == '__main__':
 	import os, random
-	data = os.urandom(1024)
+	data = os.urandom(1024*1024*16)
 	x = ParallelCompressionInterface()
 	a = x.compress(data)
 	b = x.decompress(a)
 	assert b == data
+
+	x = _SingleThreadedAESCipher(os.urandom(8192))
+	st = time.time()
+	a = x.encrypt(data)
+	print((time.time() - st) * 1000)
+	st = time.time()
+	b = x.decrypt(a)
+	print((time.time() - st) * 1000)
+	assert b == data
+	
+	x = ParallelAESInterface(os.urandom(8192))
+	st = time.time()
+	a = x.encrypt(data)
+	print((time.time() - st) * 1000)
+	print((len(data) * (1 / (time.time() - st))) / 1024 / 1024)
+	st = time.time()
+	b = x.decrypt(a)
+	print((time.time() - st) * 1000)
+	assert b == data
+	print(len(a) - len(data))
