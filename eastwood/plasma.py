@@ -181,7 +181,7 @@ class ParallelCompressionInterface(object):
 		return self.__decompress(input)	
 
 class _SingleThreadedAESCipher(object):
-	__IV_SIZE = 16
+	__IV_SIZE = 12
 	__MODE = AES.MODE_GCM
 	__AES_NI = True
 	
