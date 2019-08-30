@@ -2,10 +2,67 @@
 Threaded classes which offload the work of compression and decompression from EWProtocol and its subclasses
 """
 import logging
-from queue import Empty
+from queue import Empty, Queue
 from threading import Thread
 
-from eastwood.plasma import ParallelCompressionInterface
+class HandlerManager:
+	"""
+	Class that manages handler threads
+	"""
+	def __init__(self, num_threads, plasma, plasma_func, callback, plasma_args=(), plasma_kwargs={}, callback_args=(), callback_kwargs={}):
+		"""
+		Args:
+			num_threads: number of threads to use
+			plasma: plasma interface to use
+			plasma_func: name of function from plasma to handle data with
+			callback: callback to run after handling data
+			plasma_args: args for plasma
+			plasma_kwargs: kwargs for plasma
+			callback_args: args to prepend to callback
+			callback_kwargs: kwargs to prepend to callback
+		"""
+		self.__index = 0 # Index for packet order
+		self.__input_queue = Queue() # Data should be added via add_to_queue instead
+		self.__output_queue = Queue() # Used by internal outbox handler only
+
+		# Spawn workers
+		self.__inbox_threads = []
+		for i in range(num_threads):
+			self.__inbox_threads.append(InboxHandlerThread(self.__input_queue, self.__output_queue, plasma, plasma_func, *plasma_args, **plasma_kwargs))
+
+		# Spawn outbox handler thread
+		self.__outbox_handler = OutboxHandlerThread(self.__output_queue, callback, *callback_args, **callback_kwargs)
+
+	def start(self):
+		"""
+		Start managed threads
+		"""
+		# Start workers
+		for thread in self.__inbox_threads:
+			thread.start()
+
+		# Start outbox handler
+		self.__outbox_handler.start()
+
+	def add_to_queue(self, data):
+		"""
+		Adds data to queue, will be put into a tuple and prepended with an index
+		"""
+		self.__input_queue.put_nowait((self.__index, data))
+		self.__index += 1 # Increment index
+
+	def stop(self):
+		"""
+		Stop managed threads, will block until completed
+		"""
+		# Stop workers
+		for thread in self.__inbox_threads:
+			thread.running = False
+			thread.join()
+
+		# Stop outbox handler
+		self.__outbox_handler.running = False
+		self.__outbox_handler.join()
 
 class OutboxHandlerThread(Thread):
 	"""
@@ -17,7 +74,7 @@ class OutboxHandlerThread(Thread):
 			queue: outbox queue to handle data from (accepts tuple of index, data)
 			callback: callback to run after handling data
 			*args: args to prepend to callback
-			**kwargs: kwargs to append to callback
+			**kwargs: kwargs to prepend to callback
 		"""
 		super().__init__()
 		self.daemon = True
@@ -74,16 +131,19 @@ class OutboxHandlerThread(Thread):
 		"""
 		self.callback(*self.callback_args, *args, **self.callback_kwargs, **kwargs)
 
-class CompressorDepressor(Thread):
+class InboxHandlerThread(Thread):
 	"""
-	Threaded class that either compresses or decompresses data from queues
+	Threaded class handles data from an input queue
 	"""
-	def __init__(self, input_queue, output_queue, handle_mode):
+	def __init__(self, input_queue, output_queue, plasma, func_name):
 		"""
 		Args:
 			input_queue: queue to use for input (accepts tuple of index, data)
 			output_queue: queue to output to
-			handle_mode: method to handle data, either "compress" or "decompress"
+			plasma: plasma interface to use
+			func_name: name of function from plasma to handle data with
+			*args: args for plasma
+			**kwargs: kwargs for plasma
 		"""
 		super().__init__()
 		self.daemon = True
@@ -93,17 +153,11 @@ class CompressorDepressor(Thread):
 		self.logger = logging.getLogger(name=self.__class__.__name__)
 		self.logger.setLevel(logging.INFO)
 
-		self.input_queue = input_queue # Compression/decompression queue
-		self.output_queue = output_queue # Sent to the handler
+		self.input_queue = input_queue # Input queue
+		self.output_queue = output_queue # Output queue
 
-		# Plasma instance
-		self.plasma = ParallelCompressionInterface()
-		if handle_mode == "compress":
-			self.handle_func = self.plasma.compress
-		elif handle_mode == "decompress":
-			self.handle_func = self.plasma.decompress
-		else:
-			raise ValueError
+		self.plasma = plasma() # Plasma instance
+		self.handle_func = getattr(self.plasma, func_name)
 
 	def run(self):
 		while self.running:
