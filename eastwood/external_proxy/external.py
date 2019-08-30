@@ -41,7 +41,7 @@ class ExternalProxyExternalProtocol(MCProtocol):
 		super().connectionLost(reason)
 
 		# Subtract from conn limit
-		self.factory.num_connections += 1
+		self.factory.num_connections -= 1
 
 		# Tell the internal mcprotocol
 		try:
