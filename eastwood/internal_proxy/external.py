@@ -63,7 +63,7 @@ class InternalProxyExternalProtocol(MCProtocol):
 		self.ip_forward = self.config["global"]["ip_forwarding"]
 
 	def create_modules(self, modules):
-		modules = [InternalProxyExternalModule] + modules
+		modules.insert(0, InternalProxyExternalModule)
 		super().create_modules(modules)
 
 class InternalProxyExternalFactory(MCFactory, ClientFactory):

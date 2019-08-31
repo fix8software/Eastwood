@@ -32,7 +32,7 @@ class InternalProxyInternalProtocol(EWProtocol):
 		self.authed = not bool(self.password) # If password is none, authentication is disabled
 
 	def create_modules(self, modules):
-		modules = [InternalProxyInternalModule] + modules
+		modules.insert(0, InternalProxyInternalModule)
 		super().create_modules(modules)
 
 	def packet_received(self, buff, name):
