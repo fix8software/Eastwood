@@ -9,10 +9,11 @@ from Crypto.Cipher import AES
 from psutil import cpu_count
 from multiprocessing.pool import ThreadPool
 from threading import Thread
+from secrets import token_bytes
 import zstd, time, os, hashlib
 
 # These are the only classes that ought to be used with Plasma publicly.
-__all__ = ["ParallelAESInterface", "ParallelCompressionInterface"]
+__all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
@@ -254,6 +255,20 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 	def __chunks(l, n):
 		for i in range(0, len(l), n):
 			yield l[i:i+n]
+			
+def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, salt_length: int = 0xFF, salt_generator = token_bytes) -> tuple:
+	"""
+	Sauced, salted hash function.
+	Args:
+		raw: bytes to hash
+		salt: bytes or None
+	Returns:
+		tuple: (bytes, bytes) - The hash, then the salt.
+	"""
+	salt = (lambda x: x if salt == None else salt)(salt_generator(salt_length))
+	for _ in range(iterations):
+		raw = hashlib.sha512(raw + salt).digest()
+	return (raw, salt)
 
 if __name__ == '__main__':
 	import os, random
@@ -282,3 +297,6 @@ if __name__ == '__main__':
 	print((time.time() - st) * 1000)
 	assert b == data
 	print(len(a) - len(data))
+	
+	x, y = IteratedSaltedHash(b'helloworld')
+	print(x)

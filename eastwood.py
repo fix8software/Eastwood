@@ -64,7 +64,7 @@ secret = "{2}"
 # How long to buffer Minecraft packets into poems for, in milliseconds.
 # Setting this to a higher value may improve bandwidth savings, but
 # will increase ping.
-buffer_ms = 25
+buffer_ms = 75
 
 # Protocol version to use for Minecraft packets. To see the protocol
 # version of your version of Minecraft, look here...

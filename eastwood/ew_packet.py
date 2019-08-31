@@ -31,7 +31,7 @@ packet_names = [
 	("auth", "upstream"),
 	# packet id # 4
 	# fields:
-	#	bytes: sha256-hashed salted password
+	#	bytes: hashed and salted password
 	#	bytes: the salt
 ]
 
