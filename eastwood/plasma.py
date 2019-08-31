@@ -25,21 +25,19 @@ class ParallelCompressionInterface(object):
 	# zstd attributes
 	__MAX_LEVEL = 22
 	__MIN_LEVEL = 1
-	__BUFFER_TIME_MS = 10
 	__TOO_LOW_MAX = 8
-	__UNLEARN_INTERVAL_SECONDS = 180
+	__UNLEARN_INTERVAL_SECONDS = 30
 	__ATHS_START = 0x003FFFFF
 	
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 20):
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 100):
 		"""
 		Args:
 			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
 		"""
 
-		self.__too_low_tries = 0
 		self.__big_data = b''
 		self.__global_level = self.__MAX_LEVEL
 		self.__pool = ThreadPool(nodes)
@@ -48,7 +46,8 @@ class ParallelCompressionInterface(object):
 		self.__target_speed = target_speed_ms
 		self.__average_too_high_size = self.__ATHS_START
 		self.__unlearn_setback = self.__jitter_setback_training()
-		self.__average_too_high_size = self.__ATHS_START
+		self.__average_too_high_size = self.__unlearn_setback
+		self.__global_level = self.__MAX_LEVEL
 		
 		self.__threads = []
 		
@@ -115,7 +114,7 @@ class ParallelCompressionInterface(object):
 
 		if level < 1:
 			suggested = (lambda x,l,u: l if x<l else u if x>u else x)((lambda x,a,b,c,d: (x-a)/(b-a)*(d-c)+c)(len(input),0,self.__average_too_high_size,self.__MAX_LEVEL,self.__MIN_LEVEL),self.__MIN_LEVEL,self.__MAX_LEVEL)
-			level = int((self.__global_level + suggested) // 2)
+			level = int(round((self.__global_level + suggested) / 2))
 
 		startt = time.time()
 		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.__internal_node_count)))))
@@ -126,14 +125,11 @@ class ParallelCompressionInterface(object):
 		self.__average_time = (self.__average_time + msec) / 2
 		if self.__average_time > self.__target_speed and self.__global_level > self.__MIN_LEVEL:
 			self.__global_level -= 1
-		elif self.__average_time < self.__target_speed - self.__BUFFER_TIME_MS and self.__global_level < self.__MAX_LEVEL:
-			self.__too_low_tries += 1
-			if self.__too_low_tries >= self.__TOO_LOW_MAX:
-				self.__global_level += 1
-				self.__too_low_tries = 0
+		elif self.__average_time < self.__target_speed and self.__global_level < self.__MAX_LEVEL:
+			self.__global_level += 1
 				
-		if msec > self.__target_speed:
-			self.__average_too_high_size = (self.__average_too_high_size + len(input)) // 2
+		if self.__average_time > self.__target_speed:
+			self.__average_too_high_size = int(round((self.__average_too_high_size + len(input)) / 2))
 			self.__big_data = input
 
 		if len(result) > len(input):
@@ -179,7 +175,7 @@ class ParallelCompressionInterface(object):
 		return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 	
 	def __internal_decompression(self, input: bytes) -> bytes:
-		return self.__decompress(input)	
+		return self.__decompress(input)
 
 class _SingleThreadedAESCipher(object):
 	__IV_SIZE = 12
@@ -272,9 +268,12 @@ def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, sa
 
 if __name__ == '__main__':
 	import os, random
-	data = os.urandom(1024*1024*16)
+	data = os.urandom(1024*1024)
 	x = ParallelCompressionInterface()
-	a = x.compress(data)
+	for _ in range(8):
+		st = time.time()
+		a = x.compress(data)
+		print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level))
 	b = x.decompress(a)
 	assert b == data
 
