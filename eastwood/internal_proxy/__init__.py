@@ -8,32 +8,25 @@ from twisted.internet import reactor
 from eastwood.factories.ew_factory import EWFactory
 from eastwood.internal_proxy.external import InternalProxyExternalFactory
 from eastwood.internal_proxy.internal import InternalProxyInternalProtocol
-from eastwood.server_pinger import ServerPingerFactory
+from eastwood.misc import parse_ip_port
 
-def create(protocol_version, host, port, mc_host, mc_port, buffer_wait, password, secret, ip_forward):
+def create(config):
 	"""
 	Create an instance of InternalProxyInternalProtocol which communicates with the external proxy
 	Create an instance of InternalProxyExternalFactory which controls the clients to the real server
 	Args:
-		protocol_version: protocol specification to use
-		host: internal proxy's listening ip
-		port: internal proxy's istening port
-		mc_host: minecraft server's ip
-		mc_port: minecraft server's port
-		buffer_wait: amount of time to wait before sending buffered packets (in ms)
-		password: password to authenticate with
-		secret: aes secret to use
-		ip_forward: if true, forward the true ip
+		config: config dict
 	"""
-	# Create an instance of EWFactory with   which communicates with the external proxy
-	internal_factory = EWFactory(protocol_version, "upstream", buffer_wait, password, secret)
+	# Create an instance of EWFactory with InternalProxyInternalProtocol which communicates with the external proxy
+	internal_factory = EWFactory("upstream", config)
 	internal_factory.protocol = InternalProxyInternalProtocol
 
 	# Create an instance of InternalProxyExternalFactory which controls the clients to the real server
-	client_man = InternalProxyExternalFactory(protocol_version, mc_host, mc_port, ip_forward, ServerPingerFactory(mc_host, mc_port))
+	client_man = InternalProxyExternalFactory(config)
 
 	# Assign other_factory
 	internal_factory.other_factory = client_man
 	client_man.other_factory = internal_factory
 
+	host, port = parse_ip_port(config["internal"]["bind"])
 	reactor.listenTCP(port, internal_factory, interface=host)

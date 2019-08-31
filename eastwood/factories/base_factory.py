@@ -9,13 +9,14 @@ class BaseFactory(Factory):
 	"""
 	protocol=BaseProtocol
 
-	def __init__(self, protocol_version, handle_direction):
+	def __init__(self, handle_direction, config):
 		"""
 		Args:
-			protocol_version: minecraft protocol specification to use
 			handle_direction: direction packets being handled by this protocol are going (can be "clientbound" or "serverbound")
+			config: config dict
 		"""
-		self.protocol_version = protocol_version
+		self.config = config
+		self.protocol_version = config["global"]["protocol_version"]
 		self.buff_class = self.get_buff_class()
 		self.handle_direction = handle_direction
 		self.other_factory = None # Other factory is assigned by hand to prevent chicken egg problem
@@ -26,4 +27,4 @@ class BaseFactory(Factory):
 				return buff_class
 
 	def buildProtocol(self, addr):
-		return self.protocol(self, self.buff_class, self.handle_direction, self.other_factory)
+		return self.protocol(self, self.buff_class, self.handle_direction, self.other_factory, self.config)

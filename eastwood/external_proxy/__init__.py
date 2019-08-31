@@ -6,33 +6,28 @@ from twisted.internet import reactor
 
 from eastwood.external_proxy.external import ExternalProxyExternalFactory
 from eastwood.external_proxy.internal import ExternalProxyInternalFactory
+from eastwood.misc import parse_ip_port
 
-def create(protocol_version, host, port, internal_host, internal_port, buffer_wait, password, secret, max_connections):
+def create(config):
 	"""
 	Does two things:
 	Creates an instance of ExternalProxyInternalFactory which communicates with the internal proxy
 	Creates an instance of ExternalProxyExternalFactory which communicates to the clients/bungee
 	Args:
-		protocol_version: protocol specification to use
-		host: external proxy's listening ip
-		port: external proxy's istening port
-		internal_host: internal proxy's ip
-		internal_port: internal proxy's port
-		buffer_wait: amount of time to wait before sending buffered packets (in ms)
-		password: password to authenticate with
-		secret: aes secret to use
-		max_connections: max amount of clients to accept before kicking
+		config: config dict
 	"""
 	# Create an instance of ExternalProxyInternalFactory which communicates with the internal proxy as a client
-	internal_factory = ExternalProxyInternalFactory(protocol_version, "downstream", buffer_wait, password, secret)
+	internal_factory = ExternalProxyInternalFactory("downstream", config)
 
 	# Creates an instance of ExternalProxyExternalFactory which communicates to the clients/bungee
-	server = ExternalProxyExternalFactory(protocol_version, "upstream", max_connections)
+	server = ExternalProxyExternalFactory("upstream", config)
 
 	# Assign other_factory
 	internal_factory.other_factory = server
 	server.other_factory = internal_factory
 
 	# Call reactor
+	internal_host, internal_port = parse_ip_port(config["external"]["internal"])
+	host, port = parse_ip_port(config["external"]["bind"])
 	reactor.connectTCP(internal_host, internal_port, internal_factory)
 	reactor.listenTCP(port, server, interface=host)

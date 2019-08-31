@@ -7,13 +7,13 @@ class MCFactory(BaseFactory):
 	"""
 	protocol=MCProtocol
 
-	def __init__(self, protocol_version, handle_direction):
+	def __init__(self, handle_direction, config):
 		"""
 		Args:
-			protocol_version: minecraft protocol specification to use
 			handle_direction: direction packets being handled by this protocol are going (can be "clientbound" or "serverbound")
+			config: config dict
 		"""
-		super().__init__(protocol_version, handle_direction)
+		super().__init__(handle_direction, config)
 		self.uuid_dict = {} # Lookup for connection protocols by uuid
 
 	def get_client(self, uuid):
@@ -25,6 +25,3 @@ class MCFactory(BaseFactory):
 			protocol: protocol of client
 		"""
 		return self.uuid_dict[uuid.to_hex()]
-
-	def buildProtocol(self, addr):
-		return self.protocol(self, self.buff_class, self.handle_direction, self.other_factory, self.protocol_version)

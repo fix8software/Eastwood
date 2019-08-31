@@ -8,20 +8,10 @@ class MCProtocol(BaseProtocol):
 	Base protocol that communicates between the minecraft client and server
 	Intercepts packets after being processed
 	"""
-	def __init__(self, factory, buff_class, handle_direction, other_factory, protocol_version, uuid=None):
-		"""
-		Protocol args:
-			factory: factory that made this protocol (subclass of BaseFactory)
-			buff_class: buffer class that this protocol will use
-			handle_direction: direction packets being handled by this protocol are going (can be "downstream" or "upstream")
-			other_factory: the other factory that communicates with this protocol (in this case an instance of EWProtocol)
-			protocol_version: protocol specification to use
-			uuid: uuid of client, don't set to autogen
-		"""
-		super().__init__(factory, buff_class, handle_direction, other_factory)
-		self.protocol_version = protocol_version
+	def create(self):
+		self.protocol_version = self.config["global"]["protocol_version"]
 		self.protocol_mode = "init"
-		self.uuid = uuid or UUID.random()
+		self.uuid = UUID.random() # UUID can be overriden
 
 	def connectionMade(self):
 		# Assign uuid to self

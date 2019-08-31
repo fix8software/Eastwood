@@ -20,19 +20,21 @@ class BaseProtocol(Protocol, PacketDispatcher):
 	Base class that contains shared functionality between all protocols in eastwood
 	Much of the protocol code is borrowed from https://github.com/barneygale/quarry/blob/master/quarry/net/protocol.py
 	"""
-	def __init__(self, factory, buff_class, handle_direction, other_factory):
+	def __init__(self, factory, buff_class, handle_direction, other_factory, config):
 		"""
 		Protocol args:
 			factory: factory that made this protocol (subclass of BaseFactory)
 			buff_class: buffer class that this protocol will use
 			handle_direction: direction packets being handled by this protocol are going (can be "clientbound" or "serverbound")
 			other_factory: the other factory that this protocol will communicate with
+			config: config dict
 		"""
 		self.factory = factory
 		self.other_factory = other_factory
 		self.logger = logging.getLogger(name=self.__class__.__name__)
 		self.logger.setLevel(logging.INFO)
 		self.buff_class = buff_class
+		self.config = config
 		self.pers_buff = self.buff_class() # There is a persistant buffer to prevent dropping of incomplete packets
 
 		# Determine handle and send direction based off one argument
@@ -44,6 +46,14 @@ class BaseProtocol(Protocol, PacketDispatcher):
 			self.send_direction = "upstream"
 		else:
 			raise ValueError
+
+		self.create() # Call create function
+
+	def create(self):
+		"""
+		Skeleton init function so overriding __init__ is not necessary
+		Meant to be overriden
+		"""
 
 	def connectionMade(self):
 		"""

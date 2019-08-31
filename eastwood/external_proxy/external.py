@@ -9,17 +9,8 @@ class ExternalProxyExternalProtocol(MCProtocol):
 	The packets are then sent to ExternalProxyInternalProtocol to be buffered and then forwarded
 	Sorry for the long name, it is to prevent people from confusing it with ExternalProxyInternalProtocol (which communicates with the internal proxy)
 	"""
-	def __init__(self, factory, buff_class, handle_direction, other_factory, protocol_version, uuid=None):
-		"""
-		Protocol args:
-			factory: factory that made this protocol (subclass of BaseFactory)
-			buff_class: buffer class that this protocol will use
-			handle_direction: direction packets being handled by this protocol are going (can be "downstream" or "upstream")
-			other_factory: the other factory that communicates with this protocol (in this case an instance of EWProtocol)
-			protocol_version: protocol specification to use
-			uuid: uuid of client, don't set to autogen
-		"""
-		super().__init__(factory, buff_class, handle_direction, other_factory, protocol_version, uuid)
+	def create(self):
+		super().create()
 		self.queue = [] # A queue exists at first to prevent packets from sending when the lan client/other mcprotocol hasn't been created yet
 
 	def connectionMade(self):
@@ -98,14 +89,13 @@ class ExternalProxyExternalFactory(MCFactory):
 	"""
 	protocol=ExternalProxyExternalProtocol
 
-	def __init__(self, protocol_version, handle_direction, max_connections):
+	def __init__(self, handle_direction, config):
 		"""
 		Args:
-			protocol_version: minecraft protocol specification to use
 			handle_direction: direction packets being handled by this protocol are going (can be "clientbound" or "serverbound")
-			max_connections: max amount of clients to accept before kicking
+			config: config dict
 		"""
-		super().__init__(protocol_version, handle_direction)
+		super().__init__(handle_direction, config)
 
-		self.max_connections = max_connections
+		self.max_connections = config["external"]["player_limit"]
 		self.num_connections = 0

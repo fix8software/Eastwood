@@ -6,19 +6,6 @@ from twisted.internet import reactor
 from twisted.python import log
 from pathlib import Path
 
-def parse_ip_port(string):
-	"""
-	Takes IP:PORT formatted string and splits the address + port, port is also casted to an int
-	Args:
-		string: IP:PORT formatted string
-	"""
-	try:
-		string = string.split(":")
-		return string[0], int(string[1])
-	except:
-		print("Invalid IP:PORT provided!")
-		exit()
-
 def main():
 	try:
 		config_location = sys.argv[1]
@@ -115,13 +102,9 @@ player_limit = 65535
 
 	# Start proxies
 	if config['global']['type'] in ("internal", "both"):
-		ip, port = parse_ip_port(config['internal']['bind'])
-		mc_ip, mc_port = parse_ip_port(config['internal']['minecraft'])
-		internal_proxy.create(config['global']['protocol_version'], ip, port, mc_ip, mc_port, config['global']['buffer_ms'], config['global']['password'], config['global']['secret'], config['global']['ip_forwarding'])
+		internal_proxy.create(config)
 	if config['global']['type'] in ("external", "both"):
-		ip, port = parse_ip_port(config['external']['bind'])
-		internal_ip, internal_port = parse_ip_port(config['external']['internal'])
-		external_proxy.create(config['global']['protocol_version'], ip, port, internal_ip, internal_port, config['global']['buffer_ms'], config['global']['password'], config['global']['secret'], config['external']['player_limit'])
+		external_proxy.create(config)
 
 	# Run proxy with twisted
 	reactor.run()

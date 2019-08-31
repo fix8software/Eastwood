@@ -3,25 +3,17 @@ from twisted.internet.protocol import ClientFactory
 from quarry.types.uuid import UUID
 
 from eastwood.factories.mc_factory import MCFactory
+from eastwood.misc import parse_ip_port
 from eastwood.protocols.mc_protocol import MCProtocol
+from eastwood.server_pinger import ServerPingerFactory
 
 class InternalProxyExternalProtocol(MCProtocol):
 	"""
 	Emulated client connections to trick the server that everyone is connected on LAN
 	"""
-	def __init__(self, factory, buff_class, handle_direction, other_factory, buffer_wait, ip_forward, uuid=None):
-		"""
-		Protocol args:
-			factory: factory that made this protocol (subclass of BaseFactory)
-			buff_class: buffer class that this protocol will use
-			handle_direction: direction packets being handled by this protocol are going (can be "downstream" or "upstream")
-			other_factory: the other factory that communicates with this protocol (in this case an instance of EWProtocol)
-			protocol_version: protocol specification to use
-			ip_forward: if true, forward the true ip
-			uuid: uuid of client, don't set to autogen
-		"""
-		super().__init__(factory, buff_class, handle_direction, other_factory, buffer_wait, uuid=uuid)
-		self.ip_forward = ip_forward
+	def create(self):
+		super().create()
+		self.ip_forward = self.config["global"]["ip_forwarding"]
 
 	def connectionMade(self):
 		super().connectionMade()
@@ -72,20 +64,14 @@ class InternalProxyExternalFactory(MCFactory, ClientFactory):
 	"""
 	Manages client connections and also keeps track of their identity
 	"""
-	def __init__(self, protocol_version, mc_host, mc_port, ip_forward, ping_factory):
+	def __init__(self, config):
 		"""
 		Args:
-			protocol_version: minecraft protocol specification to use
-			mc_host: minecraft server's ip
-			mc_port: minecraft server's port
-			ip_forward: if true, forward the true ip
-			ping_factory: factory to ping the mc server
+			config: config dict
 		"""
-		super().__init__(protocol_version, "downstream")
-		self.mc_host = mc_host
-		self.mc_port = mc_port
-		self.ip_forward = ip_forward
-		self.ping_factory = ping_factory
+		super().__init__("downstream", config)
+		self.mc_host, self.mc_port = parse_ip_port(config["internal"]["minecraft"])
+		self.ping_factory = ServerPingerFactory(self.mc_host, self.mc_port)
 		self.ping_factory.callback = self.on_successful_ping
 
 	def add_connection(self, uuid):
@@ -113,6 +99,8 @@ class InternalProxyExternalFactory(MCFactory, ClientFactory):
 		# Build protocol with an unassigned uuid
 		try:
 			k = [*self.uuid_dict.keys()][[*self.uuid_dict.values()].index(None)]
-			return InternalProxyExternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.protocol_version, self.ip_forward, uuid=UUID(hex=k))
+			pc = InternalProxyExternalProtocol(self, self.buff_class, self.handle_direction, self.other_factory, self.config)
+			pc.uuid = UUID(hex=k)
+			return pc
 		except ValueError:
 			pass
