@@ -7,12 +7,6 @@ from eastwood.plasma import ParallelAESInterface, ParallelCompressionInterface
 from eastwood.protocols.base_protocol import BaseProtocol
 from eastwood.ew_packet import packet_ids, packet_names
 
-# A bunch of variables that haven't become arguments.
-COMP_THREADS = 1
-DEP_THREADS = 1
-ENC_THREADS = 1
-DEC_THREADS = 1
-
 class EWProtocol(BaseProtocol):
 	"""
 	Base class that contains shared functionality between the two proxy's comm protocols
@@ -31,27 +25,27 @@ class EWProtocol(BaseProtocol):
 		self.buffer_wait = buffer_wait
 		self.password = password # NOTE: Not used by EWProtocol, its subclasses will handle authentication with it
 
-		self.compression_handler = HandlerManager(COMP_THREADS,
+		self.compression_handler = HandlerManager(1,
 											ParallelCompressionInterface,
 											"compress",
 											reactor.callFromThread,
 											callback_args=(self.send_packet, "poem")
 											)
-		self.depression_handler = HandlerManager(DEP_THREADS,
+		self.depression_handler = HandlerManager(1,
 											ParallelCompressionInterface,
 											"decompress",
 											reactor.callFromThread,
 											callback_args=(self.parse_packet_recv_poem,)
 											)
 
-		self.encryption_handler = HandlerManager(ENC_THREADS,
+		self.encryption_handler = HandlerManager(1,
 											ParallelAESInterface,
 											"encrypt",
 											reactor.callFromThread,
 											callback_args=(self.parse_encrypted_packet,),
 											plasma_args=(secret.encode(),)
 											)
-		self.decryption_handler = HandlerManager(DEC_THREADS,
+		self.decryption_handler = HandlerManager(1,
 											ParallelAESInterface,
 											"decrypt",
 											reactor.callFromThread,
