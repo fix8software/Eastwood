@@ -2,26 +2,24 @@ from collections import defaultdict
 from quarry.net.protocol import BufferUnderrun
 from twisted.internet import reactor
 
+from eastwood.modules import Module
 from eastwood.non_blocking_io import HandlerManager
 from eastwood.plasma import ParallelAESInterface, ParallelCompressionInterface
 from eastwood.protocols.base_protocol import BaseProtocol
 from eastwood.ew_packet import packet_ids, packet_names
 
-class EWProtocol(BaseProtocol):
+class EWModule(Module):
 	"""
-	Base class that contains shared functionality between the two proxy's comm protocols
-	Data sent over is buffered and lz4 compressed
+	Internal module that deals with peom compression/decompression
 	"""
-	def create(self):
-		self.buffer_wait = self.config["global"]["buffer_ms"]
-		self.password = self.config["global"]["password"] # NOTE: Not used by EWProtocol, its subclasses will handle authentication with it
-		self.secret = self.config["global"]["secret"]
+	def __init__(self, protocol):
+		super().__init__(protocol)
 
 		self.compression_handler = HandlerManager(1,
 											ParallelCompressionInterface,
 											"compress",
 											reactor.callFromThread,
-											callback_args=(self.send_packet, "poem")
+											callback_args=(self.protocol.send_packet, "poem")
 											)
 		self.depression_handler = HandlerManager(1,
 											ParallelCompressionInterface,
@@ -29,6 +27,77 @@ class EWProtocol(BaseProtocol):
 											reactor.callFromThread,
 											callback_args=(self.parse_packet_recv_poem,)
 											)
+
+	def connectionMade(self):
+		self.compression_handler.start()
+		self.depression_handler.start()
+
+	def connectionLost(self, reason):
+		self.compression_handler.stop()
+		self.depression_handler.stop()
+
+	def compress_and_send(self, data):
+		self.compression_handler.add_to_queue(data)
+
+	def packet_recv_poem(self, buff):
+		"""
+		Uncompresses poem packet data
+		"""
+		self.depression_handler.add_to_queue(buff.read())
+
+	def parse_packet_recv_poem(self, uncompressed_data):
+		"""
+		Parses the poem and dispatches callouts with packet_mc_* callbacks
+		Also forwards the packets afterwards
+		"""
+		buff = self.protocol.buff_class(uncompressed_data) # Create buffer
+
+		unordered_data = {} # Holds packets by index
+		try:
+			while True: # Unpack data until a bufferunderrun
+				index = buff.unpack_varint()
+				uuid = buff.unpack_uuid()
+				packet = buff.unpack_packet(self.protocol.buff_class) # Packet is unpacked here as the subclass will just forward it
+				packet_name = packet.unpack_string()
+				packet.save()
+				unordered_data[index] = (uuid, packet_name, packet)
+		except BufferUnderrun:
+			pass
+
+		buff.discard() # Discard when done
+
+		# Dispatch calls
+		for tup in sorted(unordered_data.items(), key=lambda kv: kv[0]):
+			uuid, packet_name, packet_data = tup[1]
+
+			try:
+				client = self.protocol.other_factory.get_client(uuid) # Get client
+			except KeyError:
+				continue # The client has disconnected already, ignore
+
+			try: # Attempt to dispatch
+				new_packet = client.dispatch("_".join(("packet", "send", packet_name)), packet_data)
+			except BufferUnderrun:
+				client.logger.info("Packet is too short: {}".format(packet_name))
+				continue
+
+			# If nothing was returned, the packet should be sent as it was originally
+			if not new_packet:
+				new_packet = (packet_name, packet_data)
+
+			# Forward packet
+			if new_packet[1] != None: # If the buffer is none, it was explictly stated to not send the packet!
+				client.send_packet(new_packet[0], new_packet[1].buff)
+
+class EWProtocol(BaseProtocol):
+	"""
+	Base class that contains shared functionality between the two proxy's comm protocols
+	Data sent over is buffered and compressed
+	"""
+	def create(self):
+		self.buffer_wait = self.config["global"]["buffer_ms"]
+		self.password = self.config["global"]["password"] # NOTE: Not used by EWProtocol, its subclasses will handle authentication with it
+		self.secret = self.config["global"]["secret"]
 
 		if self.secret: # Secret can be falsy (empty string)
 			self.encryption_handler = HandlerManager(1,
@@ -46,11 +115,15 @@ class EWProtocol(BaseProtocol):
 												plasma_args=(self.secret.encode(),)
 												)
 
+	def create_modules(self, modules):
+		modules = [EWModule] + modules # Prepend ew module (poem parsing)
+		super().create_modules(modules)
+
 	def connectionMade(self):
 		"""
 		Called when a connection is made
 		"""
-		super().connectionMade()
+		self.logger.info("Connected to other proxy!")
 
 		if self.factory.instance: # Only one protocol can exist
 			self.transport.loseConnection()
@@ -62,14 +135,18 @@ class EWProtocol(BaseProtocol):
 		if self.secret:
 			self.encryption_handler.start()
 			self.decryption_handler.start()
-		self.compression_handler.start()
-		self.depression_handler.start()
 
 		# Run self.send_buffered_packets every self.buffer_wait ms
 		reactor.callLater(self.buffer_wait/1000, self.send_buffered_packets)
 
+		# Call module handlers
+		super().connectionMade()
+
 	def connectionLost(self, reason):
-		super().connectionLost(reason)
+		"""
+		Called when the proxy is properly disconnected
+		"""
+		self.logger.info("Lost connection to other proxy! Reason: {}".format(reason))
 
 		# Remove factory instance
 		self.factory.instance = None
@@ -78,8 +155,9 @@ class EWProtocol(BaseProtocol):
 		if self.secret:
 			self.encryption_handler.stop()
 			self.decryption_handler.stop()
-		self.compression_handler.stop()
-		self.depression_handler.stop()
+
+		# Call module handlers
+		super().connectionLost(reason)
 
 	def packet_received(self, buff, name):
 		"""
@@ -183,54 +261,4 @@ class EWProtocol(BaseProtocol):
 			packet_data.discard() # Buffer is no longer needed
 
 		# Compress poem and send
-		self.compression_handler.add_to_queue(b"".join(poem.values()))
-
-	def packet_recv_poem(self, buff):
-		"""
-		Uncompresses poem packet data
-		"""
-		self.depression_handler.add_to_queue(buff.read())
-
-	def parse_packet_recv_poem(self, uncompressed_data):
-		"""
-		Parses the poem and dispatches callouts with packet_mc_* callbacks
-		Also forwards the packets afterwards
-		"""
-		buff = self.buff_class(uncompressed_data) # Create buffer
-
-		unordered_data = {} # Holds packets by index
-		try:
-			while True: # Unpack data until a bufferunderrun
-				index = buff.unpack_varint()
-				uuid = buff.unpack_uuid()
-				packet = buff.unpack_packet(self.buff_class) # Packet is unpacked here as the subclass will just forward it
-				packet_name = packet.unpack_string()
-				packet.save()
-				unordered_data[index] = (uuid, packet_name, packet)
-		except BufferUnderrun:
-			pass
-
-		buff.discard() # Discard when done
-
-		# Dispatch calls
-		for tup in sorted(unordered_data.items(), key=lambda kv: kv[0]):
-			uuid, packet_name, packet_data = tup[1]
-
-			try:
-				client = self.other_factory.get_client(uuid) # Get client
-			except KeyError:
-				continue # The client has disconnected already, ignore
-
-			try: # Attempt to dispatch
-				new_packet = client.dispatch(("send", packet_name), packet_data)
-			except BufferUnderrun:
-				client.logger.info("Packet is too short: {}".format(packet_name))
-				continue
-
-			# If nothing was returned, the packet should be sent as it was originally
-			if not new_packet:
-				new_packet = (packet_name, packet_data)
-
-			# Forward packet
-			if new_packet[1] != None: # If the buffer is none, it was explictly stated to not send the packet!
-				client.send_packet(new_packet[0], new_packet[1].buff)
+		self.dispatch("compress_and_send", b"".join(poem.values()))

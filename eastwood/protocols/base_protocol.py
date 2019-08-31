@@ -6,21 +6,12 @@ import logging
 from quarry.net.protocol import BufferUnderrun
 from twisted.internet.protocol import Protocol
 
-class PacketDispatcher:
-	"""
-	The one that comes with quarry is shit, ment to be a drop-in replacement
-	"""
-	def dispatch(self, lookup_args, *args, **kwargs):
-		handler = getattr(self, "packet_{}".format("_".join(lookup_args)), None)
-		if handler is not None:
-			return handler(*args, **kwargs)
-
-class BaseProtocol(Protocol, PacketDispatcher):
+class BaseProtocol(Protocol):
 	"""
 	Base class that contains shared functionality between all protocols in eastwood
 	Much of the protocol code is borrowed from https://github.com/barneygale/quarry/blob/master/quarry/net/protocol.py
 	"""
-	def __init__(self, factory, buff_class, handle_direction, other_factory, config):
+	def __init__(self, factory, buff_class, handle_direction, other_factory, config, modules=[]):
 		"""
 		Protocol args:
 			factory: factory that made this protocol (subclass of BaseFactory)
@@ -28,6 +19,7 @@ class BaseProtocol(Protocol, PacketDispatcher):
 			handle_direction: direction packets being handled by this protocol are going (can be "clientbound" or "serverbound")
 			other_factory: the other factory that this protocol will communicate with
 			config: config dict
+			modules: list of modules to use (priority is left to right)
 		"""
 		self.factory = factory
 		self.other_factory = other_factory
@@ -47,25 +39,37 @@ class BaseProtocol(Protocol, PacketDispatcher):
 		else:
 			raise ValueError
 
+		self.modules = [] # Module array
+		self.create_modules(modules) # Initialize modules
+
 		self.create() # Call create function
 
 	def create(self):
 		"""
 		Skeleton init function so overriding __init__ is not necessary
-		Meant to be overriden
+		Can to be overriden
 		"""
+
+	def create_modules(self, modules):
+		"""
+		Initializes and registers modules
+		Can be overriden (w/ a super) to prepend internal modules
+		"""
+		# Initialize modules
+		for module in modules:
+			self.modules.append(module(self))
 
 	def connectionMade(self):
 		"""
 		Called when a connection is made
 		"""
-		self.logger.info("Connected to other proxy!")
+		self.recursive_dispatch("connectionMade")
 
 	def connectionLost(self, reason):
 		"""
-		Called when the connection is properly disconnected
+		Called when the connection has been disconnected
 		"""
-		self.logger.info("Lost connection to other proxy! Reason: {}".format(reason))
+		self.recursive_dispatch("connectionLost", reason)
 
 	def dataReceived(self, data):
 		"""
@@ -108,11 +112,30 @@ class BaseProtocol(Protocol, PacketDispatcher):
 				self.transport.loseConnection()
 				return
 
+	def dispatch(self, function_name, *args, **kwargs):
+		"""
+		Calls the packet function packet_{*lookup_args} in a module, and returns whether or not the call is successful
+		"""
+		for module in self.modules:
+			# The module with the highest priority will handle the packet
+			handler = getattr(module, function_name, None)
+			if handler is not None:
+				return handler(*args, **kwargs)
+
+	def recursive_dispatch(self, function_name, *args, **kwargs):
+		"""
+		Recursively calls function "function_name", does not return anything as this is meant to be for callbacks
+		"""
+		for module in self.modules:
+			handler = getattr(module, function_name, None)
+			if handler is not None:
+				handler(*args, **kwargs)
+
 	def packet_received(self, buff, name):
 		"""
 		Dispatch a packet based off name
 		"""
-		if not self.dispatch(("recv", name), buff):
+		if not self.dispatch("_".join(("packet", "recv", name)), buff):
 			self.packet_unhandled(buff, name)
 
 	def packet_unhandled(self, buff, name):

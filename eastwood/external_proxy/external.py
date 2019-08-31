@@ -1,61 +1,36 @@
 from quarry.net.protocol import BufferUnderrun
 
 from eastwood.factories.mc_factory import MCFactory
+from eastwood.modules import Module
 from eastwood.protocols.mc_protocol import MCProtocol
 
-class ExternalProxyExternalProtocol(MCProtocol):
+class ExternalProxyExternalModule(Module):
 	"""
-	The ExternalProxyExternalProtocol intercepts all packets sent to this proxy
-	The packets are then sent to ExternalProxyInternalProtocol to be buffered and then forwarded
-	Sorry for the long name, it is to prevent people from confusing it with ExternalProxyInternalProtocol (which communicates with the internal proxy)
+	Internal module that keeps the external proxy's protocol mode updated
+	Also manages connection limit
 	"""
-	def create(self):
-		super().create()
-		self.queue = [] # A queue exists at first to prevent packets from sending when the lan client/other mcprotocol hasn't been created yet
-
 	def connectionMade(self):
-		super().connectionMade()
-
 		# Make sure we are not over the connection limit
-		self.factory.num_connections += 1
-		if self.factory.num_connections > self.factory.max_connections:
-			self.transport.loseConnection() # Kick
+		self.protocol.factory.num_connections += 1
+		if self.protocol.factory.num_connections > self.protocol.factory.max_connections:
+			self.protocol.transport.loseConnection() # Kick
 			return
 
 		# Tell the other mcprotocol
 		try:
-			self.other_factory.instance.send_packet("add_conn", self.buff_class.pack_uuid(self.uuid))
+			self.protocol.other_factory.instance.send_packet("add_conn", self.protocol.buff_class.pack_uuid(self.protocol.uuid))
 		except AttributeError:
-			self.transport.loseConnection()
+			self.protocol.transport.loseConnection()
 
 	def connectionLost(self, reason):
-		super().connectionLost(reason)
-
 		# Subtract from conn limit
-		self.factory.num_connections -= 1
+		self.protocol.factory.num_connections -= 1
 
 		# Tell the internal mcprotocol
 		try:
-			self.other_factory.instance.send_packet("delete_conn", self.buff_class.pack_uuid(self.uuid))
+			self.protocol.other_factory.instance.send_packet("delete_conn", self.protocol.buff_class.pack_uuid(self.protocol.uuid))
 		except AttributeError:
 			pass
-
-	def packet_received(self, buff, name):
-		# Intercept packet here
-		if self.queue != None: # Queue exists, add them there instead
-			# Handle packet first
-			try:
-				if not self.dispatch(("recv", name), buff):
-					self.packet_unhandled(buff, name)
-			except BufferUnderrun:
-				self.logger.info("Packet is too short: {}".format(name))
-				return
-
-			self.queue.append((self.uuid, name, buff))
-			return
-
-		# Append it to the buffer list
-		super().packet_received(buff, name)
 
 	def packet_recv_handshake(self, buff):
 		"""
@@ -69,19 +44,50 @@ class ExternalProxyExternalProtocol(MCProtocol):
 		protocol_mode = buff.unpack_varint() # Protocol mode
 
 		if protocol_mode == 1:
-			self.protocol_mode = "status"
+			self.protocol.protocol_mode = "status"
 		elif protocol_mode == 2:
-			self.protocol_mode = "login"
+			self.protocol.protocol_mode = "login"
 
 	def packet_send_login_success(self, buff):
 		"""
 		Set protocol_mode to play
 		https://wiki.vg/Protocol#Handshake
 		"""
-		self.send_packet("login_success", buff.read()) # Send packet myself
-		self.protocol_mode = "play" # Change mode after sending to prevent an error
+		self.protocol.send_packet("login_success", buff.read()) # Send packet myself
+		self.protocol.protocol_mode = "play" # Change mode after sending to prevent an error
 
 		return ("login_success", None) # Prevent old packet from sending
+
+class ExternalProxyExternalProtocol(MCProtocol):
+	"""
+	The ExternalProxyExternalProtocol intercepts all packets sent to this proxy
+	The packets are then sent to ExternalProxyInternalProtocol to be buffered and then forwarded
+	Sorry for the long name, it is to prevent people from confusing it with ExternalProxyInternalProtocol (which communicates with the internal proxy)
+	"""
+	def create(self):
+		super().create()
+		self.queue = [] # A queue exists at first to prevent packets from sending when the lan client/other mcprotocol hasn't been created yet
+
+	def create_modules(self, modules):
+		modules = [ExternalProxyExternalModule] + modules
+		super().create_modules(modules)
+
+	def packet_received(self, buff, name):
+		# Intercept packet here
+		if self.queue != None: # Queue exists, add them there instead
+			# Handle packet first
+			try:
+				if not self.dispatch("_".join(("packet", "recv", name)), buff):
+					self.packet_unhandled(buff, name)
+			except BufferUnderrun:
+				self.logger.info("Packet is too short: {}".format(name))
+				return
+
+			self.queue.append((self.uuid, name, buff))
+			return
+
+		# Append it to the buffer list
+		super().packet_received(buff, name)
 
 class ExternalProxyExternalFactory(MCFactory):
 	"""

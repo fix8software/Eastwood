@@ -17,9 +17,15 @@ class MCProtocol(BaseProtocol):
 		# Assign uuid to self
 		self.factory.uuid_dict[self.uuid.to_hex()] = self
 
+		# Call module handlers
+		super().connectionMade()
+
 	def connectionLost(self, reason):
 		# Remove self from uuid dict
 		del self.factory.uuid_dict[self.uuid.to_hex()]
+
+		# Call module handlers
+		super().connectionLost(reason)
 
 	def packet_received(self, buff, name):
 		"""

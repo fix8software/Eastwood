@@ -4,26 +4,21 @@ from quarry.types.uuid import UUID
 
 from eastwood.factories.mc_factory import MCFactory
 from eastwood.misc import parse_ip_port
+from eastwood.modules import Module
 from eastwood.protocols.mc_protocol import MCProtocol
 from eastwood.server_pinger import ServerPingerFactory
 
-class InternalProxyExternalProtocol(MCProtocol):
+class InternalProxyExternalModule(Module):
 	"""
-	Emulated client connections to trick the server that everyone is connected on LAN
+	Internal module for the internal proxy's external portion
 	"""
-	def create(self):
-		super().create()
-		self.ip_forward = self.config["global"]["ip_forwarding"]
-
 	def connectionMade(self):
-		super().connectionMade()
-
 		# Protocol is connected, allow the other MCProtocol to send packets
-		self.other_factory.instance.send_packet("release_queue", self.buff_class.pack_uuid(self.uuid))
+		self.protocol.other_factory.instance.send_packet("release_queue", self.protocol.buff_class.pack_uuid(self.protocol.uuid))
 
 	def packet_recv_login_success(self, buff):
 		# Switch protocol mode to play
-		self.protocol_mode = "play"
+		self.protocol.protocol_mode = "play"
 
 	def packet_send_handshake(self, buff):
 		"""
@@ -45,20 +40,31 @@ class InternalProxyExternalProtocol(MCProtocol):
 		new_data = buff.pack_varint(protocol_version)
 
 		# Only fake the ip if we are using bungeecord
-		if self.ip_forward:
+		if self.protocol.ip_forward:
 			new_data += buff.pack_string(true_ip)
 			new_data += buff.pack("H", true_port)
 		else:
-			new_data += buff.pack_string(self.factory.mc_host)
-			new_data += buff.pack("H", self.factory.mc_port)
+			new_data += buff.pack_string(self.protocol.factory.mc_host)
+			new_data += buff.pack("H", self.protocol.factory.mc_port)
 
 		new_data += buff.pack_varint(protocol_mode)
 
-		self.send_packet("handshake", new_data) # Send packet myself
-		self.protocol_mode = mode # Change mode after sending to prevent an error
+		self.protocol.send_packet("handshake", new_data) # Send packet myself
+		self.protocol.protocol_mode = mode # Change mode after sending to prevent an error
 
 		return ("handshake", None) # Prevent old packet from sending
 
+class InternalProxyExternalProtocol(MCProtocol):
+	"""
+	Emulated client connections to trick the server that everyone is connected on LAN
+	"""
+	def create(self):
+		super().create()
+		self.ip_forward = self.config["global"]["ip_forwarding"]
+
+	def create_modules(self, modules):
+		modules = [InternalProxyExternalModule] + modules
+		super().create_modules(modules)
 
 class InternalProxyExternalFactory(MCFactory, ClientFactory):
 	"""
