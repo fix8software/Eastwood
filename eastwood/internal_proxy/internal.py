@@ -12,6 +12,16 @@ class InternalProxyInternalProtocol(EWProtocol):
 
 		self.authed = False
 
+	def packet_received(self, buff, name):
+		"""
+		Non AES version of parse_decrypted_packet
+		"""
+		if not self.secret and not self.authed:
+			self.packet_special_auth(buff)
+			return
+
+		super().packet_received(buff, name)
+
 	def parse_decrypted_packet(self, data, name):
 		"""
 		Treat all packets as an auth packet until the packet has been authenticated

@@ -30,20 +30,21 @@ class EWProtocol(BaseProtocol):
 											callback_args=(self.parse_packet_recv_poem,)
 											)
 
-		self.encryption_handler = HandlerManager(1,
-											ParallelAESInterface,
-											"encrypt",
-											reactor.callFromThread,
-											callback_args=(self.parse_encrypted_packet,),
-											plasma_args=(self.secret.encode(),)
-											)
-		self.decryption_handler = HandlerManager(1,
-											ParallelAESInterface,
-											"decrypt",
-											reactor.callFromThread,
-											callback_args=(self.parse_decrypted_packet,),
-											plasma_args=(self.secret.encode(),)
-											)
+		if self.secret: # Secret can be falsy (empty string)
+			self.encryption_handler = HandlerManager(1,
+												ParallelAESInterface,
+												"encrypt",
+												reactor.callFromThread,
+												callback_args=(self.parse_encrypted_packet,),
+												plasma_args=(self.secret.encode(),)
+												)
+			self.decryption_handler = HandlerManager(1,
+												ParallelAESInterface,
+												"decrypt",
+												reactor.callFromThread,
+												callback_args=(self.parse_decrypted_packet,),
+												plasma_args=(self.secret.encode(),)
+												)
 
 	def connectionMade(self):
 		"""
@@ -58,8 +59,9 @@ class EWProtocol(BaseProtocol):
 		self.factory.instance = self
 
 		# Start handlers
-		self.encryption_handler.start()
-		self.decryption_handler.start()
+		if self.secret:
+			self.encryption_handler.start()
+			self.decryption_handler.start()
 		self.compression_handler.start()
 		self.depression_handler.start()
 
@@ -73,8 +75,9 @@ class EWProtocol(BaseProtocol):
 		self.factory.instance = None
 
 		# Stop handlers
-		self.encryption_handler.stop()
-		self.decryption_handler.stop()
+		if self.secret:
+			self.encryption_handler.stop()
+			self.decryption_handler.stop()
 		self.compression_handler.stop()
 		self.depression_handler.stop()
 
@@ -82,8 +85,11 @@ class EWProtocol(BaseProtocol):
 		"""
 		Decrypt the packets
 		"""
-		self.decryption_handler.add_to_queue(buff.read(), name)
-		buff.discard()
+		if self.secret:
+			self.decryption_handler.add_to_queue(buff.read(), name)
+			buff.discard()
+		else:
+			super().packet_received(buff, name)
 
 	def parse_decrypted_packet(self, data, name):
 		"""
@@ -138,7 +144,10 @@ class EWProtocol(BaseProtocol):
 		"""
 		Encrypts packet before sending it
 		"""
-		self.encryption_handler.add_to_queue(b"".join(data), name)
+		if self.secret:
+			self.encryption_handler.add_to_queue(b"".join(data), name)
+		else:
+			super().send_packet(name, *data)
 
 	def parse_encrypted_packet(self, data, name):
 		"""

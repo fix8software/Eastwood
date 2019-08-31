@@ -45,7 +45,8 @@ password = "{1}"
 
 # Shared AES secret. Also important if you're not using {3} across
 # a VPN or you're just generally exposing {3} to the public in any
-# way. This is used to keep traffic encrypted and prevent a MITM attack
+# way. This is used to keep traffic encrypted and prevent a MITM attack.
+# Set to "" to disable AES.
 secret = "{2}"
 
 # How long to buffer Minecraft packets into poems for, in milliseconds.
