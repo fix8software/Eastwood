@@ -10,7 +10,7 @@ class InternalProxyInternalProtocol(EWProtocol):
 	def create(self):
 		super().create()
 
-		self.authed = False
+		self.authed = not bool(self.password) # If password is none, authentication is disabled
 
 	def packet_received(self, buff, name):
 		"""

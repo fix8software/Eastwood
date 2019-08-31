@@ -14,16 +14,17 @@ class ExternalProxyInternalProtocol(EWProtocol):
 		"""
 		super().connectionMade()
 
-		# Hash password
-		hashed_pass, salt = IteratedSaltedHash(self.password.encode())
+		if self.password: # If password is empty/none the auth packet will not be sent
+			# Hash password
+			hashed_pass, salt = IteratedSaltedHash(self.password.encode())
 
-		data = b"".join((
-			self.buff_class.pack_packet(hashed_pass), # Data is passed as packets for length prefixing
-			self.buff_class.pack_packet(salt)
-		))
+			data = b"".join((
+				self.buff_class.pack_packet(hashed_pass), # Data is passed as packets for length prefixing
+				self.buff_class.pack_packet(salt)
+			))
 
-		self.send_packet("auth", data) # Send
-		self.logger.info("Sent auth packet")
+			self.send_packet("auth", data) # Send
+			self.logger.info("Sent auth packet")
 
 	def packet_recv_release_queue(self, buff):
 		"""

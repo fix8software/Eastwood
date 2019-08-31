@@ -40,7 +40,7 @@ type = "both"
 # Proxy authentication password. Important if you're not using {3} across
 # a VPN or you're just generally exposing {3} to the public in any
 # way. Used to authenticate proxy and allow packets to be registered
-# by the other proxy.
+# by the other proxy. Set to "" to disable authentication.
 password = "{1}"
 
 # Shared AES secret. Also important if you're not using {3} across
