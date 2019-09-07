@@ -11,7 +11,7 @@ class BaseProtocol(Protocol):
 	Base class that contains shared functionality between all protocols in eastwood
 	Much of the protocol code is borrowed from https://github.com/barneygale/quarry/blob/master/quarry/net/protocol.py
 	"""
-	def __init__(self, factory, buff_class, handle_direction, other_factory, config, modules=[]):
+	def __init__(self, factory, buff_class, handle_direction, other_factory, config, modules=()):
 		"""
 		Protocol args:
 			factory: factory that made this protocol (subclass of BaseFactory)

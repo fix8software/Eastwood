@@ -70,9 +70,7 @@ class ExternalProxyExternalProtocol(MCProtocol):
 		self.queue = [] # A queue exists at first to prevent packets from sending when the lan client/other mcprotocol hasn't been created yet
 
 	def create_modules(self, modules):
-		modules.insert(0, ChunkCacher)
-		modules.insert(0, ExternalProxyExternalModule)
-		super().create_modules(modules)
+		super().create_modules((ChunkCacher, ExternalProxyExternalModule) + modules)
 
 	def packet_received(self, buff, name):
 		# Intercept packet here

@@ -2,7 +2,7 @@ from quarry.net.protocol import BufferUnderrun
 
 from eastwood.modules import Module
 from eastwood.plasma import IteratedSaltedHash
-from eastwood.protocols.ew_protocol import EWModule, EWProtocol
+from eastwood.protocols.ew_protocol import EWProtocol
 
 class InternalProxyInternalModule(Module):
 	"""
@@ -10,7 +10,6 @@ class InternalProxyInternalModule(Module):
 	"""
 	def __init__(self, protocol):
 		super().__init__(protocol)
-		self.dimension = 0 # Player dimension, used for tracking chunks
 
 		if not hasattr(self.protocol.other_factory, "cache_list"):
 			self.protocol.other_factory.cache_lists = {-1: [], 0: [], 1: []} # List to keep track of cached data
@@ -23,10 +22,10 @@ class InternalProxyInternalModule(Module):
 		dimension = buff.unpack_varint()
 		key = buff.read()
 
-		if key in self.protocol.other_factory.cache_lists[self.dimension]:
-			del self.protocol.other_factory.cache_lists[self.dimension][key]
+		if key in self.protocol.other_factory.cache_lists[dimension]:
+			del self.protocol.other_factory.cache_lists[dimension][key]
 		else:
-			self.protocol.other_factory.cache_lists[self.dimension].append(key)
+			self.protocol.other_factory.cache_lists[dimension].append(key)
 
 	def packet_recv_delete_conn(self, buff):
 		# Delete uuid connection
@@ -48,8 +47,7 @@ class InternalProxyInternalProtocol(EWProtocol):
 		self.authed = not bool(self.password) # If password is none, authentication is disabled
 
 	def create_modules(self, modules):
-		modules.insert(0, InternalProxyInternalModule)
-		super().create_modules(modules)
+		super().create_modules((InternalProxyInternalModule,) + modules)
 
 	def packet_received(self, buff, name):
 		"""
