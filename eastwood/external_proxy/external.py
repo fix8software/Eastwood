@@ -2,6 +2,7 @@ from quarry.net.protocol import BufferUnderrun
 
 from eastwood.factories.mc_factory import MCFactory
 from eastwood.modules import Module
+from eastwood.modules.chunk_cacher import ChunkCacher
 from eastwood.protocols.mc_protocol import MCProtocol
 
 class ExternalProxyExternalModule(Module):
@@ -69,6 +70,7 @@ class ExternalProxyExternalProtocol(MCProtocol):
 		self.queue = [] # A queue exists at first to prevent packets from sending when the lan client/other mcprotocol hasn't been created yet
 
 	def create_modules(self, modules):
+		modules.insert(0, ChunkCacher)
 		modules.insert(0, ExternalProxyExternalModule)
 		super().create_modules(modules)
 

@@ -12,6 +12,11 @@ class InternalProxyExternalModule(Module):
 	"""
 	Internal module for the internal proxy's external portion
 	"""
+	def __init__(self, protocol):
+		super().__init__(protocol)
+
+		self.dimension = 0 # Player dimension, used for tracking chunks
+
 	def connectionMade(self):
 		# Protocol is connected, allow the other MCProtocol to send packets
 		self.protocol.other_factory.instance.send_packet("release_queue", self.protocol.buff_class.pack_uuid(self.protocol.uuid))
@@ -53,6 +58,33 @@ class InternalProxyExternalModule(Module):
 		self.protocol.protocol_mode = mode # Change mode after sending to prevent an error
 
 		return ("handshake", None) # Prevent old packet from sending
+
+	def packet_recv_join_game(self, buff):
+		"""
+		Called when the client joins the game, we need to capture the dimension
+		"""
+		buff.pos += 40 # Skip entity id and gamemode (32+8 bits)
+		self.dimension = buff.unpack("i")
+
+	def packet_recv_respawn(self, buff):
+		"""
+		Same here, need to capture the dimension
+		"""
+		self.dimension = buff.unpack("i") # Dimension is the first packed field
+
+	def packet_recv_chunk_data(self, buff):
+		"""
+		If chunk is cached on the other side, strip chunk packet of all data instaed of the key
+		"""
+		chunk_key = buff.read(length=64) # Use the chunk x and z values in bytes as the key
+		full_chunk = buff.unpack("?")
+
+		if full_chunk:
+			return # Ignore full chunks
+
+		if chunk_key in self.protocol.factory.cache_lists[self.dimension]:
+			# Send stripped chunk packet if cached
+			return ("chunk_data", b"".join(chunk_key, self.protocol.buff_class.pack("?", False)))
 
 class InternalProxyExternalProtocol(MCProtocol):
 	"""

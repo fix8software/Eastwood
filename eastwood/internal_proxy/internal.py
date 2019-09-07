@@ -8,9 +8,25 @@ class InternalProxyInternalModule(Module):
 	"""
 	This internal module handles adding and removing pseudo clients
 	"""
+	def __init__(self, protocol):
+		super().__init__(protocol)
+		self.dimension = 0 # Player dimension, used for tracking chunks
+
+		if not hasattr(self.protocol.other_factory, "cache_list"):
+			self.protocol.other_factory.cache_lists = {-1: [], 0: [], 1: []} # List to keep track of cached data
+
 	def packet_recv_add_conn(self, buff):
 		# Add a connection to InternalProxyMCClientFactory
 		self.protocol.other_factory.add_connection(buff.unpack_uuid())
+
+	def packet_recv_toggle_chunk(self, buff):
+		dimension = buff.unpack_varint()
+		key = buff.read()
+
+		if key in self.protocol.other_factory.cache_lists[self.dimension]:
+			del self.protocol.other_factory.cache_lists[self.dimension][key]
+		else:
+			self.protocol.other_factory.cache_lists[self.dimension].append(key)
 
 	def packet_recv_delete_conn(self, buff):
 		# Delete uuid connection
