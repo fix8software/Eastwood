@@ -83,7 +83,7 @@ class InternalProxyExternalModule(Module):
 
 		if chunk_key in self.protocol.factory.cache_lists[self.dimension]:
 			# Send stripped chunk packet if cached
-			return ("chunk_data", self.protocol.buff_class(b"".join((chunk_key, self.protocol.buff_class.pack("?", False)))))
+			return ("chunk_data", self.protocol.buff_class(b"".join((chunk_key, self.protocol.buff_class.pack("?", True)))))
 
 class InternalProxyExternalProtocol(MCProtocol):
 	"""

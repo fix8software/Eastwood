@@ -2,12 +2,11 @@
 Chunk caching system to reduce the netusage of the most expensive packet to send (chunk data packets)
 """
 from collections import defaultdict
-from quarry.net.protocol import BufferUnderrun
 
 from eastwood.bincache import Cache
 from eastwood.modules import Module
 
-THRESHOLD = 3 # Chunk data should be pulled x times before entering the cache
+THRESHOLD = 0 # Chunk data should be pulled x times before entering the cache
 
 class ChunkCacher(Module):
 	"""
@@ -59,9 +58,11 @@ class ChunkCacher(Module):
 			return
 
 		data = buff.read() # Get rest of chunk data
-		if len(data) < 1:
-			# If we fail here, this means we are supposed to send a cached chunk!
-			return ("chunk_data", self.generate_cached_chunk_packet(chunk_key))
+		if not data:
+			# There is nothing here, this means we are supposed to send a cached chunk!
+			cached_data = self.generate_cached_chunk_packet(chunk_key)
+			if cached_data:
+				return ("chunk_data", self.protocol.buff_class(cached_data))
 
 		# Cache it
 		# The cache stores the everything in the chunk data packet after the full chunk bool
@@ -82,4 +83,4 @@ class ChunkCacher(Module):
 			self.protocol.other_factory.send_packet("toggle_chunk", b"".join((self.protocol.buff_class.pack_varint(self.dimension), key))) # Tell the other protocol that it is no longer cached
 			return None
 
-		return self.buff_class(b"".join((key, self.buff_class.pack("?", True), cached_data)))
+		return b"".join((key, self.protocol.buff_class.pack("?", True), cached_data))
