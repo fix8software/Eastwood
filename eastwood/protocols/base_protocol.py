@@ -135,14 +135,7 @@ class BaseProtocol(Protocol):
 		"""
 		Dispatch a packet based off name
 		"""
-		if not self.dispatch("_".join(("packet", "recv", name)), buff):
-			self.packet_unhandled(buff, name)
-
-	def packet_unhandled(self, buff, name):
-		"""
-		Called when a packet is not handled
-		"""
-		buff.discard()
+		self.dispatch("_".join(("packet", "recv", name)), buff)
 
 	def send_packet(self, name, *data):
 		"""

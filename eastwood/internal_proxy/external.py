@@ -63,8 +63,7 @@ class InternalProxyExternalModule(Module):
 		"""
 		Called when the client joins the game, we need to capture the dimension
 		"""
-		buff.pos += 40 # Skip entity id and gamemode (32+8 bits)
-		self.dimension = buff.unpack("i")
+		self.dimension = buff.unpack("ibi")[2] # Ignore entity id and gamemode
 
 	def packet_recv_respawn(self, buff):
 		"""
@@ -74,17 +73,17 @@ class InternalProxyExternalModule(Module):
 
 	def packet_recv_chunk_data(self, buff):
 		"""
-		If chunk is cached on the other side, strip chunk packet of all data instaed of the key
+		If chunk is cached on the other side, strip chunk packet of all data instead of the key
 		"""
-		chunk_key = buff.read(length=64) # Use the chunk x and z values in bytes as the key
-		full_chunk = buff.unpack("?")
+		chunk_x, chunk_z, full_chunk = buff.unpack("ii?") # Use the chunk x and z values in bytes as the key
+		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
 
-		if full_chunk:
+		if not full_chunk:
 			return # Ignore full chunks
 
 		if chunk_key in self.protocol.factory.cache_lists[self.dimension]:
 			# Send stripped chunk packet if cached
-			return ("chunk_data", b"".join(chunk_key, self.protocol.buff_class.pack("?", False)))
+			return ("chunk_data", self.protocol.buff_class(b"".join((chunk_key, self.protocol.buff_class.pack("?", False)))))
 
 class InternalProxyExternalProtocol(MCProtocol):
 	"""

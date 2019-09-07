@@ -23,7 +23,7 @@ class InternalProxyInternalModule(Module):
 		key = buff.read()
 
 		if key in self.protocol.other_factory.cache_lists[dimension]:
-			del self.protocol.other_factory.cache_lists[dimension][key]
+			self.protocol.other_factory.cache_lists[dimension].remove(key)
 		else:
 			self.protocol.other_factory.cache_lists[dimension].append(key)
 

@@ -77,13 +77,15 @@ class ExternalProxyExternalProtocol(MCProtocol):
 		if self.queue != None: # Queue exists, add them there instead
 			# Handle packet first
 			try:
-				if not self.dispatch("_".join(("packet", "recv", name)), buff):
-					self.packet_unhandled(buff, name)
+				new_packet = self.dispatch("_".join(("packet", "recv", name)), buff)
 			except BufferUnderrun:
 				self.logger.info("Packet is too short: {}".format(name))
 				return
 
-			self.queue.append((self.uuid, name, buff))
+			if not new_packet: # Check if packet changed in recv
+				new_packet = (name, buff)
+
+			self.queue.append((self.uuid, *new_packet))
 			return
 
 		# Append it to the buffer list

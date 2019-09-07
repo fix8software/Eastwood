@@ -31,8 +31,7 @@ class ChunkCacher(Module):
 		"""
 		Called when the client joins the game, we need to capture the dimension
 		"""
-		buff.pos += 40 # Skip entity id and gamemode (32+8 bits)
-		self.dimension = buff.unpack("i")
+		self.dimension = buff.unpack("ibi")[2] # Ignore entity id and gamemode
 
 	def packet_send_respawn(self, buff):
 		"""
@@ -47,22 +46,20 @@ class ChunkCacher(Module):
 		and should be loaded from the cache
 		"""
 		# Chunk position
-		chunk_key = buff.read(length=64) # Use the chunk x and z values in bytes as the key
-		full_chunk = buff.unpack("?")
+		chunk_x, chunk_z, full_chunk = buff.unpack("ii?") # Use the chunk x and z values in bytes as the key
+		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
 
-		if full_chunk:
+		if not full_chunk:
 			# Full chunk just creates an empty chunk to be manipulated for the client. We can ignore this.
 			return
 
-		pull_amount = self.protocol.factory.tracker[chunk_key]
-		if pull_amount <= THRESHOLD:
+		if self.protocol.factory.tracker[chunk_key] < THRESHOLD:
 			# Chunk hasn't been pulled enough to warrant caching, or it is already cached
-			pull_amount += 1
+			self.protocol.factory.tracker[chunk_key] += 1
 			return
 
-		try:
-			data = buff.read() # If the rest of the data is able to be read, this means it is caching time!
-		except BufferUnderrun:
+		data = buff.read() # Get rest of chunk data
+		if len(data) < 1:
 			# If we fail here, this means we are supposed to send a cached chunk!
 			return ("chunk_data", self.generate_cached_chunk_packet(chunk_key))
 
@@ -71,7 +68,7 @@ class ChunkCacher(Module):
 		self.protocol.factory.caches[self.dimension].insert(chunk_key, data)
 
 		# Tell the other protocol
-		self.protocol.other_factory.send_packet("toggle_chunk", b"".join(self.protocol.buff_class.pack_varint(self.dimension), chunk_key))
+		self.protocol.other_factory.instance.send_packet("toggle_chunk", b"".join((self.protocol.buff_class.pack_varint(self.dimension), chunk_key)))
 
 	def generate_cached_chunk_packet(self, key):
 		"""
@@ -82,7 +79,7 @@ class ChunkCacher(Module):
 		cached_data = self.protocol.factory.caches[self.dimension].get(key)
 		if cached_data == None:
 			del self.protocol.factory.tracker[key] # Reset the counter since the chunk is no longer cached
-			self.protocol.other_factory.send_packet("toggle_chunk", b"".join(self.protocol.buff_class.pack_varint(self.dimension), key)) # Tell the other protocol that it is no longer cached
+			self.protocol.other_factory.send_packet("toggle_chunk", b"".join((self.protocol.buff_class.pack_varint(self.dimension), key))) # Tell the other protocol that it is no longer cached
 			return None
 
-		return b"".join(key, self.buff_class.pack("?", True), cached_data)
+		return self.buff_class(b"".join((key, self.buff_class.pack("?", True), cached_data)))

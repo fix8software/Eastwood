@@ -31,18 +31,14 @@ class MCProtocol(BaseProtocol):
 		"""
 		Packets are intercepted after going through the proxy's protocol hooks
 		"""
-		super().packet_received(buff, name)
+		# Dispatch packet, and use new data if any is returned
+		new_packet = self.dispatch("_".join(("packet", "recv", name)), buff)
+		if not new_packet:
+			new_packet = (name, buff)
 
 		# Intercept packet here
 		# Append it to the buffer list
-		self.other_factory.input_buffer.append((self.uuid, name, buff))
-
-	def packet_unhandled(self, buff, name):
-		"""
-		Default implementation is to discard packets, don't do that
-		ExternalProxyInternalProtocol will discard the packets
-		"""
-		pass
+		self.other_factory.input_buffer.append((self.uuid, *new_packet))
 
 	def get_packet_name(self, id):
 		"""
