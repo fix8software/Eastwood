@@ -2,6 +2,7 @@
 Chunk caching system to reduce the netusage of the most expensive packet to send (chunk data packets)
 """
 from collections import defaultdict
+from quarry.types.chunk import BlockArray, LightArray
 
 from eastwood.bincache import Cache
 from eastwood.modules import Module
@@ -70,6 +71,101 @@ class ChunkCacher(Module):
 
 		# Tell the other protocol
 		self.protocol.other_factory.instance.send_packet("toggle_chunk", b"".join((self.protocol.buff_class.pack_varint(self.dimension), chunk_key)))
+
+	def packet_send_block_change(self, buff):
+		"""
+		Called when there is a single block change
+		"""
+		x, y, z = buff.unpack_position()
+		block = buff.registry.decode_block(buff.unpack_varint())
+		self.set_blocks((x, y, z, block))
+
+	def set_blocks(self, *blocks):
+		"""
+		Sets blocks for a specific chunk section.
+		Args:
+			blocks: tuples of (x, y, z, block_id)
+		"""
+		# Change blocks into a dict of (cx, cz) as keys and (cy, bx, by, bz, block_id) for values
+		# c means chunk, and b means block (relative to chunk)
+		parse_dict = defaultdict(list)
+		for change in blocks:
+			cx, bx = divmod(change[0], 16)
+			cy, by = divmod(change[1], 16)
+			cz, bz = divmod(change[2], 16)
+
+			parse_dict[(cx, cz)].append((cy, bx, by, bz, change[3]))
+
+		# Now, efficiently parse
+		for column in parse_dict.keys():
+			key = self.protocol.buff_class.pack("ii", *column)
+			sections, biomes = self.get_chunk_sections(key)
+
+			for change in parse_dict[column]:
+				sections[change[0]][0][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
+
+			# Save chunk section
+			self.save_chunk_sections(key, sections, biomes)
+
+	def get_chunk_sections(self, key):
+		"""
+		Gets cached chunk sections as a tuple
+		Args:
+			key: chunk column to get
+		Returns:
+			sections: list of (BlockArray, LightArray, (optional)LightArray) chunk sections
+			biomes: list of biome data
+		"""
+		column = self.protocol.buff_class(self.protocol.factory.caches[self.dimension].get(key))
+		prim_bit_mask = column.unpack_varint()
+		column.unpack_nbt() # Ignore heightmap
+
+		sections = []
+		for i in range(16):
+			if prim_bit_mask & (1 << i): # Chunk exists
+				sections.append(column.unpack_chunk_section())
+			else: # Chunk doesn't exist
+				if not self.dimension: # Overworld also returns skylight data
+					sections.append((BlockArray.empty(column.registry), LightArray.empty(), LightArray.empty()))
+				else:
+					sections.append((BlockArray.empty(column.registry), LightArray.empty()))
+
+		return sections, column.unpack("I" * 256) # Biome data is stored after chunk sections, this is used for repacking
+
+	def set_chunk_sections(self, key, sections, biomes):
+		"""
+		Sets a cached chunk section
+		Args:
+			key: chunk column to save to
+			sections: list of (BlockArray, LightArray, (optional)LightArray) chunk sections
+			biomes: list of biome data
+		"""
+		column = self.protocol.buff_class(self.protocol.factory.caches[self.dimension].get(key))
+
+		# Unpack existing data, most will be reused
+		column.unpack_varint() # Old bitmask won't be used
+		heightmap = column.unpack_nbt()
+		column.read(length=column.unpack_varint()) # Ignore current chunk data
+		tile_entity_data = column.read() # We won't mess with this
+
+		# Generate new chunk section data
+		prim_bit_mask = 0
+		new_data = b""
+		for i, section in enumerate(sections):
+			if not section[0].is_empty():
+				prim_bit_mask |= 1 << i
+				new_data += self.protocol.buff_class.pack_chunk_section(*section)
+
+		# Repack cached data
+		cached_data = b"".join(self.protocol.buff_class.pack_varint(prim_bit_mask),
+							self.protocol.buff_class.pack_nbt(heightmap),
+							self.protocol.buff_class.pack_varint(len(new_data)),
+							new_data,
+							self.protocol.buff_class.pack("I"*256, biomes),
+							tile_entity_data)
+
+		# Save new data
+		self.protocol.factory.caches[self.dimension].update(key, cached_data)
 
 	def generate_cached_chunk_packet(self, key):
 		"""
