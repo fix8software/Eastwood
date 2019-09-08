@@ -62,8 +62,8 @@ class ParallelCompressionInterface(object):
 		speed = 0
 		size = increment
 		while speed < self.__target_speed:
+            data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
 			for _ in range(2):
-				data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
 				st = time.time()
 				__ = self.compress(data, self.__MAX_LEVEL)
 				speed = (time.time() - st) * 1000
