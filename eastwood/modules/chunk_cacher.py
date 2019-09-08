@@ -82,7 +82,7 @@ class ChunkCacher(Module):
 
 	def set_blocks(self, *blocks):
 		"""
-		Sets blocks for a specific chunk section.
+		Sets blocks in cached chunks
 		Args:
 			blocks: tuples of (x, y, z, block_id)
 		"""
@@ -102,7 +102,7 @@ class ChunkCacher(Module):
 			sections, biomes = self.get_chunk_sections(key)
 
 			for change in parse_dict[column]:
-				sections[change[0]][0][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
+				sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
 
 			# Save chunk section
 			self.save_chunk_sections(key, sections, biomes)
@@ -113,7 +113,7 @@ class ChunkCacher(Module):
 		Args:
 			key: chunk column to get
 		Returns:
-			sections: list of (BlockArray, LightArray, (optional)LightArray) chunk sections
+			sections: list of BlockArray chunk sections
 			biomes: list of biome data
 		"""
 		column = self.protocol.buff_class(self.protocol.factory.caches[self.dimension].get(key))
@@ -126,9 +126,9 @@ class ChunkCacher(Module):
 				sections.append(column.unpack_chunk_section())
 			else: # Chunk doesn't exist
 				if not self.dimension: # Overworld also returns skylight data
-					sections.append((BlockArray.empty(column.registry), LightArray.empty(), LightArray.empty()))
+					sections.append(BlockArray.empty(column.registry))
 				else:
-					sections.append((BlockArray.empty(column.registry), LightArray.empty()))
+					sections.append(BlockArray.empty(column.registry))
 
 		return sections, column.unpack("I" * 256) # Biome data is stored after chunk sections, this is used for repacking
 
@@ -137,7 +137,7 @@ class ChunkCacher(Module):
 		Sets a cached chunk section
 		Args:
 			key: chunk column to save to
-			sections: list of (BlockArray, LightArray, (optional)LightArray) chunk sections
+			sections: list of BlockArray chunk sections
 			biomes: list of biome data
 		"""
 		column = self.protocol.buff_class(self.protocol.factory.caches[self.dimension].get(key))
@@ -152,9 +152,9 @@ class ChunkCacher(Module):
 		prim_bit_mask = 0
 		new_data = b""
 		for i, section in enumerate(sections):
-			if not section[0].is_empty():
+			if not section.is_empty():
 				prim_bit_mask |= 1 << i
-				new_data += self.protocol.buff_class.pack_chunk_section(*section)
+				new_data = b"".join(new_data, self.protocol.buff_class.pack_chunk_section(section))
 
 		# Repack cached data
 		cached_data = b"".join(self.protocol.buff_class.pack_varint(prim_bit_mask),
