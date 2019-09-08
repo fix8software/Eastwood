@@ -61,7 +61,7 @@ class ParallelCompressionInterface(object):
 		increment = (2 ** 16) - 1
 		speed = 0
 		size = increment
-		while speed < self.__target_speed * 3:
+		while speed < self.__target_speed:
 			for _ in range(2):
 				data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
 				st = time.time()
