@@ -58,19 +58,20 @@ class ParallelCompressionInterface(object):
 		self.last_level = self.__global_level
 
 	def __jitter_setback_training(self) -> int:
-		increment = (2 ** 16) - 1
+		increment = (2 ** 18) - 1
 		speed = 0
 		size = increment
-		while speed < self.__target_speed:
+		level = int(round((self.__MAX_LEVEL + self.__MIN_LEVEL) / 2))
+		while speed < self.__target_speed / 2:
 			data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
 			tt = []
 			for _ in range(2):
 				st = time.time()
-				_ = self.compress(data, self.__MAX_LEVEL)
+				_ = self.compress(data, level)
 				tt.append((time.time() - st) * 1000)
 			speed = sum(tt) / len(tt)
 			size += increment
-		return size
+		return size * 3
 
 	def __jitter_training_reinitialization_thread(self):
 		while True:
@@ -120,7 +121,7 @@ class ParallelCompressionInterface(object):
 
 		startt = time.time()
 		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.__internal_node_count)))))
-		chunks = self.__pool.map(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
+		chunks = self.map(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
 
 		msec = ((time.time() - startt) * 1000)
@@ -161,7 +162,11 @@ class ParallelCompressionInterface(object):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 
-		return b''.join(self.__pool.map(self.__internal_decompression, chunks))
+		return b''.join(self.map(self.__internal_decompression, chunks))
+
+	def map(self, target, iterable):
+		chunksize = (lambda x: x if x > 1 else 1)(int(round(len(iterable) / self.__internal_node_count)))
+		return self.__pool.imap(target, iterable, chunksize)
 
 	@staticmethod
 	def __compress(input: bytes, level: int = 6) -> bytes:
@@ -270,7 +275,9 @@ def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, sa
 
 if __name__ == '__main__':
 	data = os.urandom(1024*1024)
+	st = time.time()
 	x = ParallelCompressionInterface()
+	print((time.time() - st) * 1000)
 	for _ in range(8):
 		st = time.time()
 		a = x.compress(data)
