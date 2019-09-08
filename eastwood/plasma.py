@@ -270,7 +270,9 @@ def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, sa
 
 if __name__ == '__main__':
 	data = os.urandom(1024*1024)
+	st = time.time()
 	x = ParallelCompressionInterface()
+	print((time.time() - st) * 1000)
 	for _ in range(8):
 		st = time.time()
 		a = x.compress(data)
