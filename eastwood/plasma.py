@@ -71,7 +71,7 @@ class ParallelCompressionInterface(object):
 				tt.append((time.time() - st) * 1000)
 			speed = sum(tt) / len(tt)
 			size += increment
-		return size * 2
+		return size * 3
 
 	def __jitter_training_reinitialization_thread(self):
 		while True:
