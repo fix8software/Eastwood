@@ -28,7 +28,7 @@ class ParallelCompressionInterface(object):
 	__TOO_LOW_MAX = 8
 	__UNLEARN_INTERVAL_SECONDS = 30
 	__ATHS_START = 0x003FFFFF
-	
+
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
@@ -48,34 +48,36 @@ class ParallelCompressionInterface(object):
 		self.__unlearn_setback = self.__jitter_setback_training()
 		self.__average_too_high_size = self.__unlearn_setback
 		self.__global_level = self.__MAX_LEVEL
-		
+
 		self.__threads = []
-		
+
 		self.__threads.append(Thread(target=self.__jitter_training_reinitialization_thread))
 		self.__threads[-1].daemon = True
 		self.__threads[-1].start()
-		
+
 		self.last_level = self.__global_level
-		
+
 	def __jitter_setback_training(self) -> int:
 		increment = (2 ** 16) - 1
 		speed = 0
 		size = increment
-		while speed < self.__target_speed * 3:
+		while speed < self.__target_speed:
+			data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
+			tt = []
 			for _ in range(2):
-				data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
 				st = time.time()
-				__ = self.compress(data, self.__MAX_LEVEL)
-				speed = (time.time() - st) * 1000
-				size += increment
+				_ = self.compress(data, self.__MAX_LEVEL)
+				tt.append((time.time() - st) * 1000)
+			speed = sum(tt) / len(tt)
+			size += increment
 		return size
-		
+
 	def __jitter_training_reinitialization_thread(self):
 		while True:
 			start = time.time()
 			_ = self.compress(self.__big_data, self.__global_level)
 			timed = (time.time() - start) * 1000
-			
+
 			if timed < self.__target_speed:
 				self.__average_too_high_size = self.__unlearn_setback
 			time.sleep(self.__UNLEARN_INTERVAL_SECONDS)
@@ -120,14 +122,14 @@ class ParallelCompressionInterface(object):
 		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.__internal_node_count)))))
 		chunks = self.__pool.map(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
-		
+
 		msec = ((time.time() - startt) * 1000)
 		self.__average_time = (self.__average_time + msec) / 2
 		if self.__average_time > self.__target_speed and self.__global_level > self.__MIN_LEVEL:
 			self.__global_level -= 1
 		elif self.__average_time < self.__target_speed and self.__global_level < self.__MAX_LEVEL:
 			self.__global_level += 1
-				
+
 		if self.__average_time > self.__target_speed:
 			self.__average_too_high_size = int(round((self.__average_too_high_size + len(input)) / 2))
 			self.__big_data = input
@@ -173,7 +175,7 @@ class ParallelCompressionInterface(object):
 		capsule = self.__compress(args[0], args[1])
 
 		return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
-	
+
 	def __internal_decompression(self, input: bytes) -> bytes:
 		return self.__decompress(input)
 
@@ -181,7 +183,7 @@ class _SingleThreadedAESCipher(object):
 	__IV_SIZE = 12
 	__MODE = AES.MODE_GCM
 	__AES_NI = True
-	
+
 	"""
 	This class must not be used outside of the Plasma library.
 	"""
@@ -197,7 +199,7 @@ class _SingleThreadedAESCipher(object):
 		iv = enc[:self.__IV_SIZE]
 		cipher = AES.new(self.key, self.__MODE, iv, use_aesni=self.__AES_NI)
 		return cipher.decrypt(enc[self.__IV_SIZE:])
-		
+
 	@staticmethod
 	def __hash_iterations(b: bytes, i: int = 0xFFFF):
 		for _ in range(i):
@@ -214,15 +216,15 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
 		"""
 		super().__init__(key)
-		
+
 		self.__pool = ThreadPool(nodes)
 		self.__internal_node_count = nodes
-		
+
 	def __encapsulated_encryption(self, raw: bytes) -> bytes:
 		capsule = super().encrypt(raw)
-		
+
 		return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
-		
+
 	def encrypt(self, raw: bytes) -> bytes:
 		"""
 		Main encryption function.
@@ -232,7 +234,7 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 		chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / self.__internal_node_count)))))
 		chunks = self.__pool.map(self.__encapsulated_encryption, chunks)
 		return b''.join(chunks)
-		
+
 	def decrypt(self, enc: bytes) -> bytes:
 		"""
 		Main decryption function.
@@ -246,12 +248,12 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 			enc = enc[SIZE_BYTES+chunk_length:]
 
 		return b''.join(self.__pool.map(super().decrypt, chunks))
-	
+
 	@staticmethod
 	def __chunks(l, n):
 		for i in range(0, len(l), n):
 			yield l[i:i+n]
-			
+
 def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, salt_length: int = 0xFF, salt_generator = token_bytes) -> tuple:
 	"""
 	Sauced, salted hash function.
@@ -267,7 +269,6 @@ def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, sa
 	return (raw, salt)
 
 if __name__ == '__main__':
-	import os, random
 	data = os.urandom(1024*1024)
 	x = ParallelCompressionInterface()
 	for _ in range(8):
@@ -285,7 +286,7 @@ if __name__ == '__main__':
 	b = x.decrypt(a)
 	print((time.time() - st) * 1000)
 	assert b == data
-	
+
 	x = ParallelAESInterface(os.urandom(8192))
 	st = time.time()
 	a = x.encrypt(data)
@@ -296,6 +297,6 @@ if __name__ == '__main__':
 	print((time.time() - st) * 1000)
 	assert b == data
 	print(len(a) - len(data))
-	
+
 	x, y = IteratedSaltedHash(b'helloworld')
 	print(x)
