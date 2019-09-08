@@ -63,11 +63,13 @@ class ParallelCompressionInterface(object):
 		size = increment
 		while speed < self.__target_speed:
             data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
-			for _ in range(2):
+			tt = []
+            for _ in range(2):
 				st = time.time()
 				__ = self.compress(data, self.__MAX_LEVEL)
-				speed = (time.time() - st) * 1000
-				size += increment
+				tt.append((time.time() - st) * 1000)
+            speed = sum(tt) / len(tt)
+			size += increment
 		return size
 		
 	def __jitter_training_reinitialization_thread(self):
