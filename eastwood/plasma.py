@@ -29,11 +29,11 @@ THREAD_COUNT = cpu_count() * 2
 if POOL_TYPE == 'concurrent.futures':
     GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
     λ = GLOBAL_POOL.map
-    θ = THREAD_COUNT
 elif POOL_TYPE == 'multiprocessing':
     GLOBAL_POOL = ThreadPool(THREAD_COUNT)
     λ = GLOBAL_POOL.imap
-    θ = THREAD_COUNT
+# Assign global symbol for thread count
+θ = THREAD_COUNT
 
 class ParallelCompressionInterface(object):
 	# zstd attributes
