@@ -330,10 +330,21 @@ if __name__ == '__main__':
 	x = PRNGCompressableDSPRL()
 	
 	st = time.time()
-	_ = x.random(512 * 1024)
+	n = x.random(512 * 1024)
 	print((time.time() - st) * 1000)
 	
-	data = os.urandom(1024*1024)
+	data = os.urandom(512 * 1024)
+	st = time.time()
+	x = ParallelCompressionInterface()
+	print((time.time() - st) * 1000)
+	for _ in range(8):
+		st = time.time()
+		a = x.compress(data)
+		print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level))
+	b = x.decompress(a)
+	assert b == data
+	
+	data = n
 	st = time.time()
 	x = ParallelCompressionInterface()
 	print((time.time() - st) * 1000)
