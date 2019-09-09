@@ -10,7 +10,7 @@ from psutil import cpu_count
 from multiprocessing.pool import ThreadPool
 from threading import Thread
 from secrets import token_bytes
-import zstd, time, os, hashlib
+import zstd, zlib, time, os, hashlib
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -273,7 +273,61 @@ def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, sa
 		raw = hashlib.sha512(raw + salt).digest()
 	return (raw, salt)
 
+def correct(value, bits, signed):
+	base = 1 << bits
+	value %= base
+	return value - base if signed and value.bit_length() == bits else value
+
+byte, sbyte, word, sword, dword, sdword, qword, sqword = (
+	lambda v: correct(v, 8, False), lambda v: correct(v, 8, True),
+	lambda v: correct(v, 16, False), lambda v: correct(v, 16, True),
+	lambda v: correct(v, 32, False), lambda v: correct(v, 32, True),
+	lambda v: correct(v, 64, False), lambda v: correct(v, 64, True)
+)
+
+class PRNG(object):
+	def __init__(self):
+		self.__seed = 0
+		self.seed(os.urandom(16))
+
+	def seed(self, raw: bytes):
+		self.__seed = zlib.crc32(raw) & 0xffffffff
+		self.__mwseed()
+
+	def __mwseed(self):
+		self.__m_z = self.__seed
+		self.__m_w = self.__seed // 2
+
+	def __byte(self):
+		self.__m_z = 0x9069 * (self.__m_z & 0xFFFF) + (self.__m_z >> 16)
+		self.__m_w = 0x4650 * (self.__m_w & 0xFFFF) + (self.__m_w >> 16)
+		return byte(int(round(((self.__m_z << 16) + self.__m_w) + 1) * (1 / (2 ** 32 + 2))))
+
+	def random(self, size: int = 1):
+		return bytes([self.__byte() for _ in range(size)])
+
+class PRNGCompressableDS(object):
+	def __init__(self):
+		self.__a = PRNG()
+		self.__b = PRNG()
+		self.__curseed = self.__b.random()
+
+	def random(self, size: int = 1):
+		x = bytes()
+		for _ in range(size):
+			if self.__b.random()[0] % 2 == 0:
+				self.__curseed = self.__b.random()
+
+			self.__a.seed(self.__curseed)
+			x += self.__a.random()
+
+		return x
+
 if __name__ == '__main__':
+	x = PRNGCompressableDS()
+
+	print(x.random(64))
+
 	data = os.urandom(1024*1024)
 	st = time.time()
 	x = ParallelCompressionInterface()
