@@ -27,11 +27,11 @@ THREAD_COUNT = cpu_count() * 2
 
 # Global Processing Pool
 if POOL_TYPE == 'concurrent.futures':
-    GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
-    Σ = GLOBAL_POOL.map
+	GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
+	Σ = GLOBAL_POOL.map
 elif POOL_TYPE == 'multiprocessing':
-    GLOBAL_POOL = ThreadPool(THREAD_COUNT)
-    Σ = GLOBAL_POOL.imap
+	GLOBAL_POOL = ThreadPool(THREAD_COUNT)
+	Σ = GLOBAL_POOL.imap
 # Assign global symbol for thread count
 θ = THREAD_COUNT
 
@@ -304,22 +304,22 @@ class PRNGCompressableDS(PRNG):
 			self.seed(self.__b.byte_bytes())
 
 class PRNGCompressableDSFS(PRNG):
-    def random(self, size: int = 1):
-        x = bytes()
-        while len(x) < size:
-            byte = super().random()
-            count = (lambda x, l, u: l if x < l else u if x > u else x)(super().random()[0], 4, 128)
-            # count = 0
-            # while random.randint(0, 1) != 1:
-            #     count += 1
-            x += byte * count
-            
-        return x[:size]
-            
+	def random(self, size: int = 1):
+		x = bytes()
+		while len(x) < size:
+			byte = super().random()
+			count = (lambda x, l, u: l if x < l else u if x > u else x)(super().random()[0], 4, 128)
+			# count = 0
+			# while random.randint(0, 1) != 1:
+			#	 count += 1
+			x += byte * count
+			
+		return x[:size]
+			
 class PRNGCompressableDSPRL(PRNGCompressableDSFS):
 	def random(self, size: int = 1):
 		return b''.join(Σ(super().random, [math.ceil(size / θ) for _ in range(θ)]))[:size]
-
+	
 if __name__ == '__main__':
 	import cProfile, sys
 	x = PRNGCompressableDSPRL()
