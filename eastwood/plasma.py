@@ -323,6 +323,9 @@ class PRNGCompressableDSPRL(PRNGCompressableDSFS):
 		return b''.join(Σ(super().random, [math.ceil(size / θ) for _ in range(θ)]))[:size]
 	
 if __name__ == '__main__':
+	# THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
+	# DON'T RUN THIS.
+	
 	import cProfile, sys
 	x = PRNGCompressableDSPRL()
 	
