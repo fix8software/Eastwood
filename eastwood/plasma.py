@@ -330,9 +330,9 @@ if __name__ == '__main__':
 	x = PRNGCompressableDSPRL()
 	
 	st = time.time()
-	x.random(512 * 1024)
+	_ = x.random(512 * 1024)
 	print((time.time() - st) * 1000)
-
+	
 	data = os.urandom(1024*1024)
 	st = time.time()
 	x = ParallelCompressionInterface()
