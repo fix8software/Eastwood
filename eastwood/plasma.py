@@ -24,7 +24,7 @@ META_BYTES = 1
 BYTE_ORDER = 'little'
 
 # Global Processing Pool
-THREAD_COUNT = cpu_count()
+THREAD_COUNT = cpu_count() * 2
 GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
 λ = GLOBAL_POOL.map
 θ = THREAD_COUNT
