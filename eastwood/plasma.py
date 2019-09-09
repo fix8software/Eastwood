@@ -23,6 +23,12 @@ SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
 
+# Global Processing Pool
+THREAD_COUNT = cpu_count()
+GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
+λ = GLOBAL_POOL.map
+θ = THREAD_COUNT
+
 class ParallelCompressionInterface(object):
 	# zstd attributes
 	__MAX_LEVEL = 22
@@ -42,8 +48,6 @@ class ParallelCompressionInterface(object):
 
 		self.__big_data = b''
 		self.__global_level = self.__MAX_LEVEL
-		self.__pool = ThreadPool(nodes)
-		self.__internal_node_count = nodes
 		self.__average_time = 0
 		self.__target_speed = target_speed_ms
 		self.__average_too_high_size = self.__ATHS_START
@@ -66,8 +70,6 @@ class ParallelCompressionInterface(object):
 		size = increment
 		level = int(round((self.__MAX_LEVEL + self.__MIN_LEVEL) / 2))
 		while speed < self.__target_speed / 2:
-			# Old test data
-			# data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
 			data = jstrng.random(size)
 			tt = []
 			for _ in range(2):
@@ -125,8 +127,8 @@ class ParallelCompressionInterface(object):
 			level = int(round((self.__global_level + suggested) / 2))
 
 		startt = time.time()
-		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.__internal_node_count)))))
-		chunks = self.map(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
+		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / θ)))))
+		chunks = λ(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
 
 		msec = ((time.time() - startt) * 1000)
@@ -167,11 +169,7 @@ class ParallelCompressionInterface(object):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 
-		return b''.join(self.map(self.__internal_decompression, chunks))
-
-	def map(self, target, iterable):
-		chunksize = (lambda x: x if x > 1 else 1)(int(round(len(iterable) / self.__internal_node_count)))
-		return self.__pool.imap(target, iterable, chunksize)
+		return b''.join(λ(self.__internal_decompression, chunks))
 
 	@staticmethod
 	def __compress(input: bytes, level: int = 6) -> bytes:
@@ -220,16 +218,6 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
-	def __init__(self, key: bytes, nodes: int = cpu_count()):
-		"""
-		Args:
-			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
-		"""
-		super().__init__(key)
-
-		self.__pool = ThreadPool(nodes)
-		self.__internal_node_count = nodes
-
 	def __encapsulated_encryption(self, raw: bytes) -> bytes:
 		capsule = super().encrypt(raw)
 
@@ -241,8 +229,8 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 		Args:
 			raw: Bytes to encrypt
 		"""
-		chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / self.__internal_node_count)))))
-		chunks = self.__pool.map(self.__encapsulated_encryption, chunks)
+		chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / θ)))))
+		chunks = λ(self.__encapsulated_encryption, chunks)
 		return b''.join(chunks)
 
 	def decrypt(self, enc: bytes) -> bytes:
@@ -257,7 +245,7 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 			chunks.append(enc[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			enc = enc[SIZE_BYTES+chunk_length:]
 
-		return b''.join(self.__pool.map(super().decrypt, chunks))
+		return b''.join(λ(super().decrypt, chunks))
 
 	@staticmethod
 	def __chunks(l, n):
@@ -323,13 +311,8 @@ class PRNGCompressableDSFS(PRNG):
         return x[:size]
             
 class PRNGCompressableDSPRL(PRNGCompressableDSFS):
-	def __init__(self):
-		super().__init__()
-		self.__nodes = cpu_count() * 2
-		self.__pool = ThreadPoolExecutor(max_workers = self.__nodes)
-
 	def random(self, size: int = 1):
-		return b''.join(self.__pool.map(super().random, [math.ceil(size / self.__nodes) for _ in range(self.__nodes)]))[:size]
+		return b''.join(λ(super().random, [math.ceil(size / θ) for _ in range(θ)]))[:size]
 
 if __name__ == '__main__':
 	import cProfile, sys
