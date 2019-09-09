@@ -34,7 +34,7 @@ class ParallelCompressionInterface(object):
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 120):
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 150):
 		"""
 		Args:
 			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
@@ -314,7 +314,7 @@ class PRNGCompressableDSFS(PRNG):
         x = bytes()
         while len(x) < size:
             byte = super().random()
-            count = (lambda x, l, u: l if x < l else u if x > u else x)(super().random()[0], 4, 64)
+            count = (lambda x, l, u: l if x < l else u if x > u else x)(super().random()[0], 4, 128)
             # count = 0
             # while random.randint(0, 1) != 1:
             #     count += 1
