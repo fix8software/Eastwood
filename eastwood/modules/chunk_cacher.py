@@ -7,7 +7,7 @@ from quarry.types.chunk import BlockArray, LightArray
 from eastwood.bincache import Cache
 from eastwood.modules import Module
 
-THRESHOLD = 0 # Chunk data should be pulled x times before entering the cache
+THRESHOLD = 1 # Chunk data should be pulled x times before entering the cache (Should be greater than zero)
 
 class ChunkCacher(Module):
 	"""
@@ -54,7 +54,7 @@ class ChunkCacher(Module):
 			return
 
 		if self.protocol.factory.tracker[chunk_key] < THRESHOLD:
-			# Chunk hasn't been pulled enough to warrant caching, or it is already cached
+			# Chunk hasn't been pulled enough to warrant caching
 			self.protocol.factory.tracker[chunk_key] += 1
 			return
 
@@ -78,7 +78,10 @@ class ChunkCacher(Module):
 		"""
 		x, y, z = buff.unpack_position()
 		block = buff.registry.decode_block(buff.unpack_varint())
-		self.set_blocks((x, y, z, block))
+
+		chunk_key = self.protocol.buff_class.pack("ii", x // 16, z // 16) # Chunk key is the chunk's x and z serialized as bytes
+		if self.protocol.factory.tracker[chunk_key] > THRESHOLD: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
+			self.set_blocks((x, y, z, block)) # Chunk is cached, update
 
 	def set_blocks(self, *blocks):
 		"""
