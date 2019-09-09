@@ -67,9 +67,9 @@ class ParallelCompressionInterface(object):
 		level = int(round((self.__MAX_LEVEL + self.__MIN_LEVEL) / 2))
 		while speed < self.__target_speed / 2:
 			# Old test data
-			# data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
+			data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
 			# New test data
-			data = jstrng.random(size)
+			# data = jstrng.random(size)
 			tt = []
 			for _ in range(2):
 				st = time.time()
