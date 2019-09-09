@@ -28,10 +28,10 @@ THREAD_COUNT = cpu_count() * 2
 # Global Processing Pool
 if POOL_TYPE == 'concurrent.futures':
     GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
-    λ = GLOBAL_POOL.map
+    Σ = GLOBAL_POOL.map
 elif POOL_TYPE == 'multiprocessing':
     GLOBAL_POOL = ThreadPool(THREAD_COUNT)
-    λ = GLOBAL_POOL.imap
+    Σ = GLOBAL_POOL.imap
 # Assign global symbol for thread count
 θ = THREAD_COUNT
 
@@ -134,7 +134,7 @@ class ParallelCompressionInterface(object):
 
 		startt = time.time()
 		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / θ)))))
-		chunks = λ(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
+		chunks = Σ(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
 
 		msec = ((time.time() - startt) * 1000)
@@ -175,7 +175,7 @@ class ParallelCompressionInterface(object):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 
-		return b''.join(λ(self.__internal_decompression, chunks))
+		return b''.join(Σ(self.__internal_decompression, chunks))
 
 	@staticmethod
 	def __compress(input: bytes, level: int = 6) -> bytes:
@@ -236,7 +236,7 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 			raw: Bytes to encrypt
 		"""
 		chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / θ)))))
-		chunks = λ(self.__encapsulated_encryption, chunks)
+		chunks = Σ(self.__encapsulated_encryption, chunks)
 		return b''.join(chunks)
 
 	def decrypt(self, enc: bytes) -> bytes:
@@ -251,7 +251,7 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 			chunks.append(enc[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			enc = enc[SIZE_BYTES+chunk_length:]
 
-		return b''.join(λ(super().decrypt, chunks))
+		return b''.join(Σ(super().decrypt, chunks))
 
 	@staticmethod
 	def __chunks(l, n):
@@ -318,7 +318,7 @@ class PRNGCompressableDSFS(PRNG):
             
 class PRNGCompressableDSPRL(PRNGCompressableDSFS):
 	def random(self, size: int = 1):
-		return b''.join(λ(super().random, [math.ceil(size / θ) for _ in range(θ)]))[:size]
+		return b''.join(Σ(super().random, [math.ceil(size / θ) for _ in range(θ)]))[:size]
 
 if __name__ == '__main__':
 	import cProfile, sys
