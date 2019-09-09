@@ -28,13 +28,13 @@ class ParallelCompressionInterface(object):
 	__MAX_LEVEL = 22
 	__MIN_LEVEL = 1
 	__TOO_LOW_MAX = 8
-	__UNLEARN_INTERVAL_SECONDS = 30
+	__UNLEARN_INTERVAL_SECONDS = 20
 	__ATHS_START = 0x003FFFFF
 
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 100):
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 120):
 		"""
 		Args:
 			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
