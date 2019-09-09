@@ -22,12 +22,18 @@ __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSalt
 SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
+POOL_TYPE = 'concurrent.futures'
+THREAD_COUNT = cpu_count() * 2
 
 # Global Processing Pool
-THREAD_COUNT = cpu_count() * 2
-GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
-λ = GLOBAL_POOL.map
-θ = THREAD_COUNT
+if POOL_TYPE == 'concurrent.futures':
+    GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
+    λ = GLOBAL_POOL.map
+    θ = THREAD_COUNT
+elif POOL_TYPE == 'multiprocessing':
+    GLOBAL_POOL = ThreadPool(THREAD_COUNT)
+    λ = GLOBAL_POOL.imap
+    θ = THREAD_COUNT
 
 class ParallelCompressionInterface(object):
 	# zstd attributes
