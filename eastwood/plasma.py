@@ -304,18 +304,22 @@ class PRNGCompressableDS(PRNG):
 			self.seed(self.__b.byte_bytes())
 
 class PRNGCompressableDSFS(PRNG):
+	def generator(self):
+		return super().random()
+	
 	def random(self, size: int = 1):
 		x = bytes()
 		while len(x) < size:
-			byte = super().random()
-			count = (lambda x, l, u: l if x < l else u if x > u else x)(super().random()[0], 4, 128)
-			# count = 0
-			# while random.randint(0, 1) != 1:
-			#	 count += 1
+			byte = self.generator()
+			count = (lambda x, l, u: l if x < l else u if x > u else x)(self.generator()[0], 1, 128)
 			x += byte * count
 			
 		return x[:size]
-			
+	
+class CompressableCSPRNG(PRNGCompressableDSFS):
+	def generator(self):
+		return token_bytes(1)
+		
 class PRNGCompressableDSPRL(PRNGCompressableDSFS):
 	def random(self, size: int = 1):
 		return b''.join(Σ(super().random, [math.ceil(size / θ) for _ in range(θ)]))[:size]
