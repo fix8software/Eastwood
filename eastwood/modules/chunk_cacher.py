@@ -2,7 +2,7 @@
 Chunk caching system to reduce the netusage of the most expensive packet to send (chunk data packets)
 """
 from collections import defaultdict
-from quarry.types.chunk import BlockArray, LightArray
+from quarry.types.chunk import BlockArray
 
 from eastwood.bincache import Cache
 from eastwood.modules import Module
@@ -69,6 +69,10 @@ class ChunkCacher(Module):
 		# The cache stores the everything in the chunk data packet after the full chunk bool
 		self.protocol.factory.caches[self.dimension].insert(chunk_key, data)
 
+		# A chunk with a tracker value > THRESHOLD will recieve chunk updates
+		# This should be allowed since the data is cached
+		self.protocol.factory.tracker[chunk_key] += 1
+
 		# Tell the other protocol
 		self.protocol.other_factory.instance.send_packet("toggle_chunk", b"".join((self.protocol.buff_class.pack_varint(self.dimension), chunk_key)))
 
@@ -76,39 +80,62 @@ class ChunkCacher(Module):
 		"""
 		Called when there is a single block change
 		"""
+		# Unpack enough to check if data is cached or not
 		x, y, z = buff.unpack_position()
-		block = buff.registry.decode_block(buff.unpack_varint())
 
-		chunk_key = self.protocol.buff_class.pack("ii", x // 16, z // 16) # Chunk key is the chunk's x and z serialized as bytes
+		# Get chunk and relative positions
+		cx, bx = divmod(x, 16)
+		cy, by = divmod(y, 16)
+		cz, bz = divmod(z, 16)
+
+		chunk_key = self.protocol.buff_class.pack("ii", cx, cz) # Get chunk key
 		if self.protocol.factory.tracker[chunk_key] > THRESHOLD: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
-			self.set_blocks((x, y, z, block)) # Chunk is cached, update
+			# Chunk is cached, update
 
-	def set_blocks(self, *blocks):
+			# Unpack rest of data
+			block = buff.registry.decode_block(buff.unpack_varint())
+			self.set_blocks(chunk_key, (cy, bx, by, bz, block))
+
+	def packet_send_multi_block_change(self, buff):
 		"""
-		Sets blocks in cached chunks
+		Called when there is a multi block change
+		"""
+		chunk_x, chunk_z  = buff.unpack("ii") # Use the chunk x and z values in bytes as the key
+		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
+
+		if self.protocol.factory.tracker[chunk_key] > THRESHOLD: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
+			# Chunk is cached, update
+
+			# Unpack rest of data
+			records = []
+			for _ in range(buff.unpack_varint()):
+				# Extract data from each record
+				horiz_pos, vert_pos = buff.unpack("BB")
+				x = horiz_pos >> 4 & 15 # Relative block positions
+				cy, y = divmod(vert_pos, 16) # Need chunk and relative for y
+				z = horiz_pos & 15
+				block = buff.registry.decode_block(buff.unpack_varint())
+
+				# Append to record list
+				records.append((cy, x, y, z, block))
+
+			# Call set_blocks with data
+			self.set_blocks(chunk_key, *records)
+
+	def set_blocks(self, key, *blocks):
+		"""
+		Sets blocks in a cached chunk
 		Args:
-			blocks: tuples of (x, y, z, block_id)
+			key: chunk key
+			blocks: tuples of (cy, x, y, z, block_id) Note that the coords are relative to the chunk (cy is the section to modify)
 		"""
-		# Change blocks into a dict of (cx, cz) as keys and (cy, bx, by, bz, block_id) for values
-		# c means chunk, and b means block (relative to chunk)
-		parse_dict = defaultdict(list)
+		sections, biomes = self.get_chunk_sections(key) # Get chunk
+
 		for change in blocks:
-			cx, bx = divmod(change[0], 16)
-			cy, by = divmod(change[1], 16)
-			cz, bz = divmod(change[2], 16)
+			sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
 
-			parse_dict[(cx, cz)].append((cy, bx, by, bz, change[3]))
-
-		# Now, efficiently parse
-		for column in parse_dict.keys():
-			key = self.protocol.buff_class.pack("ii", *column)
-			sections, biomes = self.get_chunk_sections(key)
-
-			for change in parse_dict[column]:
-				sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
-
-			# Save chunk section
-			self.save_chunk_sections(key, sections, biomes)
+		# Save chunk section
+		self.save_chunk_sections(key, sections, biomes)
 
 	def get_chunk_sections(self, key):
 		"""
