@@ -8,9 +8,11 @@ from Crypto import Random
 from Crypto.Cipher import AES
 from psutil import cpu_count
 from multiprocessing.pool import ThreadPool
+from multiprocessing import Pool
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from threading import Thread
 from secrets import token_bytes
-import zstd, time, os, hashlib
+import zstd, zlib, time, os, hashlib, random, math
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -58,16 +60,20 @@ class ParallelCompressionInterface(object):
 		self.last_level = self.__global_level
 
 	def __jitter_setback_training(self) -> int:
+		jstrng = PRNGCompressableDSPRL()
 		increment = (2 ** 18) - 1
 		speed = 0
 		size = increment
 		level = int(round((self.__MAX_LEVEL + self.__MIN_LEVEL) / 2))
 		while speed < self.__target_speed / 2:
+			# Old test data
 			data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
+			# New test data
+			# data = jstrng.random(size)
 			tt = []
 			for _ in range(2):
 				st = time.time()
-				_ = self.compress(data, level)
+				__ = self.compress(data, level)
 				tt.append((time.time() - st) * 1000)
 			speed = sum(tt) / len(tt)
 			size += increment
@@ -273,7 +279,54 @@ def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, sa
 		raw = hashlib.sha512(raw + salt).digest()
 	return (raw, salt)
 
+class PRNG(object):
+	def __init__(self):
+		self.seed(os.urandom(16))
+
+	def seed(self, raw: bytes):
+		self.seedval = zlib.crc32(raw) & 0xffffffff
+		self.randobj = random.Random(self.seedval)
+
+	def byte(self):		
+		self.seed_progression()
+		return self.randobj.randint(0, 255)
+
+	def seed_progression(self):
+		pass
+
+	def byte_bytes(self):
+		return bytes(self.byte())
+
+	def random(self, size: int = 1):
+		return bytes([self.byte() for _ in range(size)])
+
+class PRNGCompressableDS(PRNG):
+	def __init__(self):
+		super().__init__()
+		self.__b = PRNG()
+		self.__so = random.Random()
+
+	def seed_progression(self):
+		if self.__so.randint(0, 1) == 1:
+			self.seed(self.__b.byte_bytes())
+
+class PRNGCompressableDSPRL(PRNGCompressableDS):
+	def __init__(self):
+		super().__init__()
+		self.__nodes = cpu_count() * 2
+		self.__pool = ThreadPoolExecutor(max_workers = self.__nodes)
+
+	def random(self, size: int = 1):
+		return b''.join(self.__pool.map(super().random, [math.ceil(size / self.__nodes) for _ in range(self.__nodes)]))[:size]
+
 if __name__ == '__main__':
+	import cProfile, sys
+	x = PRNGCompressableDSPRL()
+	
+	st = time.time()
+	x.random(512 * 1024)
+	print((time.time() - st) * 1000)
+
 	data = os.urandom(1024*1024)
 	st = time.time()
 	x = ParallelCompressionInterface()
