@@ -310,9 +310,7 @@ class PRNGCompressableDSFS(PRNG):
 	def random(self, size: int = 1):
 		x = bytes()
 		while len(x) < size:
-			byte = self.generator()
-			count = (lambda x, l, u: l if x < l else u if x > u else x)(self.generator()[0], 1, 128)
-			x += byte * count
+			x += self.generator() * (lambda x, l, u: l if x < l else u if x > u else x)(self.generator()[0], 1, 128)
 			
 		return x[:size]
 	
