@@ -67,9 +67,8 @@ class ParallelCompressionInterface(object):
 		level = int(round((self.__MAX_LEVEL + self.__MIN_LEVEL) / 2))
 		while speed < self.__target_speed / 2:
 			# Old test data
-			data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
-			# New test data
-			# data = jstrng.random(size)
+			# data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
+			data = jstrng.random(size)
 			tt = []
 			for _ in range(2):
 				st = time.time()
@@ -310,7 +309,20 @@ class PRNGCompressableDS(PRNG):
 		if self.__so.randint(0, 1) == 1:
 			self.seed(self.__b.byte_bytes())
 
-class PRNGCompressableDSPRL(PRNGCompressableDS):
+class PRNGCompressableDSFS(PRNG):
+    def random(self, size: int = 1):
+        x = bytes()
+        while len(x) < size:
+            byte = super().random()
+            count = (lambda x, l, u: l if x < l else u if x > u else x)(super().random()[0], 4, 64)
+            # count = 0
+            # while random.randint(0, 1) != 1:
+            #     count += 1
+            x += byte * count
+            
+        return x[:size]
+            
+class PRNGCompressableDSPRL(PRNGCompressableDSFS):
 	def __init__(self):
 		super().__init__()
 		self.__nodes = cpu_count() * 2
