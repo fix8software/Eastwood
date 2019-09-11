@@ -70,7 +70,7 @@ class ParallelCompressionInterface(object):
 		self.last_level = self.__global_level
 
 	def __jitter_setback_training(self) -> int:
-		jstrng = PRNGCompressableDSPRL()
+		jstrng = ThreadedModPseudoRandRestrictedRand()
 		increment = (2 ** 18) - 1
 		speed = 0
 		size = increment
@@ -272,7 +272,7 @@ def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, sa
 		raw = hashlib.sha512(raw + salt).digest()
 	return (raw, salt)
 
-class PRNG(object):
+class ModPseudoRand(object):
 	def __init__(self):
 		self.seed(os.urandom(16))
 
@@ -293,17 +293,17 @@ class PRNG(object):
 	def random(self, size: int = 1):
 		return bytes([self.byte() for _ in range(size)])
 
-class PRNGCompressableDS(PRNG):
+class ModPseudoRandRestrictedSeed(ModPseudoRand):
 	def __init__(self):
 		super().__init__()
-		self.__b = PRNG()
+		self.__b = ModPseudoRand()
 		self.__so = random.Random()
 
 	def seed_progression(self):
 		if self.__so.randint(0, 1) == 1:
 			self.seed(self.__b.byte_bytes())
 
-class PRNGCompressableDSFS(PRNG):
+class ModPseudoRandRestrictedRand(ModPseudoRand):
 	def generator(self):
 		return super().random()
 	
@@ -314,11 +314,11 @@ class PRNGCompressableDSFS(PRNG):
 			
 		return x[:size]
 	
-class CompressableCSPRNG(PRNGCompressableDSFS):
+class CryptoModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 	def generator(self):
 		return token_bytes(1)
 		
-class PRNGCompressableDSPRL(PRNGCompressableDSFS):
+class ThreadedModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 	def random(self, size: int = 1):
 		return b''.join(Σ(super().random, [math.ceil(size / θ) for _ in range(θ)]))[:size]
 	
@@ -327,7 +327,7 @@ if __name__ == '__main__':
 	# DON'T RUN THIS.
 	
 	import cProfile, sys
-	x = PRNGCompressableDSPRL()
+	x = ThreadedModPseudoRandRestrictedRand()
 	
 	st = time.time()
 	n = x.random(512 * 1024)
