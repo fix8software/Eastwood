@@ -22,19 +22,31 @@ __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSalt
 SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
+POOL_TYPE = 'concurrent.futures'
+THREAD_COUNT = cpu_count() * 2
+
+# Global Processing Pool
+if POOL_TYPE == 'concurrent.futures':
+	GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
+	Σ = GLOBAL_POOL.map
+elif POOL_TYPE == 'multiprocessing':
+	GLOBAL_POOL = ThreadPool(THREAD_COUNT)
+	Σ = GLOBAL_POOL.imap
+# Assign global symbol for thread count
+θ = THREAD_COUNT
 
 class ParallelCompressionInterface(object):
 	# zstd attributes
 	__MAX_LEVEL = 22
 	__MIN_LEVEL = 1
 	__TOO_LOW_MAX = 8
-	__UNLEARN_INTERVAL_SECONDS = 30
+	__UNLEARN_INTERVAL_SECONDS = 20
 	__ATHS_START = 0x003FFFFF
 
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 100):
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 150):
 		"""
 		Args:
 			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
@@ -42,8 +54,6 @@ class ParallelCompressionInterface(object):
 
 		self.__big_data = b''
 		self.__global_level = self.__MAX_LEVEL
-		self.__pool = ThreadPool(nodes)
-		self.__internal_node_count = nodes
 		self.__average_time = 0
 		self.__target_speed = target_speed_ms
 		self.__average_too_high_size = self.__ATHS_START
@@ -60,16 +70,13 @@ class ParallelCompressionInterface(object):
 		self.last_level = self.__global_level
 
 	def __jitter_setback_training(self) -> int:
-		jstrng = PRNGCompressableDSPRL()
+		jstrng = ThreadedModPseudoRandRestrictedRand()
 		increment = (2 ** 18) - 1
 		speed = 0
 		size = increment
 		level = int(round((self.__MAX_LEVEL + self.__MIN_LEVEL) / 2))
 		while speed < self.__target_speed / 2:
-			# Old test data
-			data = os.urandom(int(size / 2)) + (b'\x00' * int(size / 2))
-			# New test data
-			# data = jstrng.random(size)
+			data = jstrng.random(size)
 			tt = []
 			for _ in range(2):
 				st = time.time()
@@ -126,8 +133,8 @@ class ParallelCompressionInterface(object):
 			level = int(round((self.__global_level + suggested) / 2))
 
 		startt = time.time()
-		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.__internal_node_count)))))
-		chunks = self.map(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
+		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / θ)))))
+		chunks = Σ(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
 
 		msec = ((time.time() - startt) * 1000)
@@ -168,11 +175,7 @@ class ParallelCompressionInterface(object):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 
-		return b''.join(self.map(self.__internal_decompression, chunks))
-
-	def map(self, target, iterable):
-		chunksize = (lambda x: x if x > 1 else 1)(int(round(len(iterable) / self.__internal_node_count)))
-		return self.__pool.imap(target, iterable, chunksize)
+		return b''.join(Σ(self.__internal_decompression, chunks))
 
 	@staticmethod
 	def __compress(input: bytes, level: int = 6) -> bytes:
@@ -221,16 +224,6 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 	"""
 	Non-threadsafe class that automatically spawns processes for continued use.
 	"""
-	def __init__(self, key: bytes, nodes: int = cpu_count()):
-		"""
-		Args:
-			nodes: integer, amount of processes to spawn. Usually, you should use the default value.
-		"""
-		super().__init__(key)
-
-		self.__pool = ThreadPool(nodes)
-		self.__internal_node_count = nodes
-
 	def __encapsulated_encryption(self, raw: bytes) -> bytes:
 		capsule = super().encrypt(raw)
 
@@ -242,8 +235,8 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 		Args:
 			raw: Bytes to encrypt
 		"""
-		chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / self.__internal_node_count)))))
-		chunks = self.__pool.map(self.__encapsulated_encryption, chunks)
+		chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / θ)))))
+		chunks = Σ(self.__encapsulated_encryption, chunks)
 		return b''.join(chunks)
 
 	def decrypt(self, enc: bytes) -> bytes:
@@ -258,7 +251,7 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 			chunks.append(enc[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			enc = enc[SIZE_BYTES+chunk_length:]
 
-		return b''.join(self.__pool.map(super().decrypt, chunks))
+		return b''.join(Σ(super().decrypt, chunks))
 
 	@staticmethod
 	def __chunks(l, n):
@@ -279,7 +272,7 @@ def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, sa
 		raw = hashlib.sha512(raw + salt).digest()
 	return (raw, salt)
 
-class PRNG(object):
+class ModPseudoRand(object):
 	def __init__(self):
 		self.seed(os.urandom(16))
 
@@ -300,34 +293,58 @@ class PRNG(object):
 	def random(self, size: int = 1):
 		return bytes([self.byte() for _ in range(size)])
 
-class PRNGCompressableDS(PRNG):
+class ModPseudoRandRestrictedSeed(ModPseudoRand):
 	def __init__(self):
 		super().__init__()
-		self.__b = PRNG()
+		self.__b = ModPseudoRand()
 		self.__so = random.Random()
 
 	def seed_progression(self):
 		if self.__so.randint(0, 1) == 1:
 			self.seed(self.__b.byte_bytes())
 
-class PRNGCompressableDSPRL(PRNGCompressableDS):
-	def __init__(self):
-		super().__init__()
-		self.__nodes = cpu_count() * 2
-		self.__pool = ThreadPoolExecutor(max_workers = self.__nodes)
-
+class ModPseudoRandRestrictedRand(ModPseudoRand):
+	def generator(self):
+		return super().random()
+	
 	def random(self, size: int = 1):
-		return b''.join(self.__pool.map(super().random, [math.ceil(size / self.__nodes) for _ in range(self.__nodes)]))[:size]
-
+		x = bytes()
+		while len(x) < size:
+			x += self.generator() * (lambda x, l, u: l if x < l else u if x > u else x)(self.generator()[0], 1, 128)
+			
+		return x[:size]
+	
+class CryptoModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
+	def generator(self):
+		return token_bytes(1)
+		
+class ThreadedModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
+	def random(self, size: int = 1):
+		return b''.join(Σ(super().random, [math.ceil(size / θ) for _ in range(θ)]))[:size]
+	
 if __name__ == '__main__':
+	# THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
+	# DON'T RUN THIS.
+	
 	import cProfile, sys
-	x = PRNGCompressableDSPRL()
+	x = ThreadedModPseudoRandRestrictedRand()
 	
 	st = time.time()
-	x.random(512 * 1024)
+	n = x.random(512 * 1024)
 	print((time.time() - st) * 1000)
-
-	data = os.urandom(1024*1024)
+	
+	data = os.urandom(512 * 1024)
+	st = time.time()
+	x = ParallelCompressionInterface()
+	print((time.time() - st) * 1000)
+	for _ in range(8):
+		st = time.time()
+		a = x.compress(data)
+		print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level))
+	b = x.decompress(a)
+	assert b == data
+	
+	data = n
 	st = time.time()
 	x = ParallelCompressionInterface()
 	print((time.time() - st) * 1000)
