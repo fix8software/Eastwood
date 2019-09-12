@@ -86,6 +86,12 @@ internal = "127.0.0.1:41429"
 # utilize this with services like Velocity in order to create a really
 # funky load-balancing system.
 player_limit = 65535
+
+[chunk_caching]
+# Enable chunk caching.
+# Warning: This feature is experimental, and will most likely raise stupid
+# amounts of exceptions. You have been warned.
+enabled = false
 """.format(datetime.datetime.now(), secrets.token_urlsafe(25), secrets.token_urlsafe(25), 'Eastwood'))
 		print('Config file generated at '+config_location+', please modify it.')
 		return
