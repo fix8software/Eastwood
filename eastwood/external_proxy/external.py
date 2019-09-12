@@ -2,6 +2,7 @@ from quarry.net.protocol import BufferUnderrun
 
 from eastwood.factories.mc_factory import MCFactory
 from eastwood.modules import Module
+from eastwood.modules.chunk_cacher import ChunkCacher
 from eastwood.protocols.mc_protocol import MCProtocol
 
 class ExternalProxyExternalModule(Module):
@@ -69,21 +70,23 @@ class ExternalProxyExternalProtocol(MCProtocol):
 		self.queue = [] # A queue exists at first to prevent packets from sending when the lan client/other mcprotocol hasn't been created yet
 
 	def create_modules(self, modules):
-		modules.insert(0, ExternalProxyExternalModule)
-		super().create_modules(modules)
+		new_modules = (ChunkCacher, ExternalProxyExternalModule) if self.config["chunk_caching"]["enabled"] else (ExternalProxyExternalModule,)
+		super().create_modules(new_modules + modules)
 
 	def packet_received(self, buff, name):
 		# Intercept packet here
 		if self.queue != None: # Queue exists, add them there instead
 			# Handle packet first
 			try:
-				if not self.dispatch("_".join(("packet", "recv", name)), buff):
-					self.packet_unhandled(buff, name)
+				new_packet = self.dispatch("_".join(("packet", "recv", name)), buff)
 			except BufferUnderrun:
 				self.logger.info("Packet is too short: {}".format(name))
 				return
 
-			self.queue.append((self.uuid, name, buff))
+			if not new_packet: # Check if packet changed in recv
+				new_packet = (name, buff)
+
+			self.queue.append((self.uuid, *new_packet))
 			return
 
 		# Append it to the buffer list

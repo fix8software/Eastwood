@@ -116,8 +116,7 @@ class EWProtocol(BaseProtocol):
 												)
 
 	def create_modules(self, modules):
-		modules.insert(0, EWModule) # Prepend ew module (poem parsing)
-		super().create_modules(modules)
+		super().create_modules((EWModule,) + modules) # Prepend ew module (poem parsing)
 
 	def connectionMade(self):
 		"""

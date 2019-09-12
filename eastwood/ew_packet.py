@@ -33,6 +33,11 @@ packet_names = [
 	# fields:
 	#	bytes: hashed and salted password
 	#	bytes: the salt
+	("toggle_chunk", "upstream"),
+	# packet id # 5
+	# fields:
+	# 	varint: dimension
+	#	bytes: chunk key
 ]
 
 """

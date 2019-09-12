@@ -12,6 +12,11 @@ class InternalProxyExternalModule(Module):
 	"""
 	Internal module for the internal proxy's external portion
 	"""
+	def __init__(self, protocol):
+		super().__init__(protocol)
+
+		self.dimension = 0 # Player dimension, used for tracking chunks
+
 	def connectionMade(self):
 		# Protocol is connected, allow the other MCProtocol to send packets
 		self.protocol.other_factory.instance.send_packet("release_queue", self.protocol.buff_class.pack_uuid(self.protocol.uuid))
@@ -54,6 +59,32 @@ class InternalProxyExternalModule(Module):
 
 		return ("handshake", None) # Prevent old packet from sending
 
+	def packet_recv_join_game(self, buff):
+		"""
+		Called when the client joins the game, we need to capture the dimension
+		"""
+		self.dimension = buff.unpack("ibi")[2] # Ignore entity id and gamemode
+
+	def packet_recv_respawn(self, buff):
+		"""
+		Same here, need to capture the dimension
+		"""
+		self.dimension = buff.unpack("i") # Dimension is the first packed field
+
+	def packet_recv_chunk_data(self, buff):
+		"""
+		If chunk is cached on the other side, strip chunk packet of all data instead of the key
+		"""
+		chunk_x, chunk_z, full_chunk = buff.unpack("ii?") # Use the chunk x and z values in bytes as the key
+		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
+
+		if not full_chunk:
+			return # Ignore full chunks
+
+		if chunk_key in self.protocol.factory.cache_lists[self.dimension]:
+			# Send stripped chunk packet if cached
+			return ("chunk_data", self.protocol.buff_class(b"".join((chunk_key, self.protocol.buff_class.pack("?", True)))))
+
 class InternalProxyExternalProtocol(MCProtocol):
 	"""
 	Emulated client connections to trick the server that everyone is connected on LAN
@@ -63,8 +94,7 @@ class InternalProxyExternalProtocol(MCProtocol):
 		self.ip_forward = self.config["global"]["ip_forwarding"]
 
 	def create_modules(self, modules):
-		modules.insert(0, InternalProxyExternalModule)
-		super().create_modules(modules)
+		super().create_modules((InternalProxyExternalModule,) + modules)
 
 class InternalProxyExternalFactory(MCFactory, ClientFactory):
 	"""

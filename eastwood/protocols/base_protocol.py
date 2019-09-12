@@ -11,7 +11,7 @@ class BaseProtocol(Protocol):
 	Base class that contains shared functionality between all protocols in eastwood
 	Much of the protocol code is borrowed from https://github.com/barneygale/quarry/blob/master/quarry/net/protocol.py
 	"""
-	def __init__(self, factory, buff_class, handle_direction, other_factory, config, modules=[]):
+	def __init__(self, factory, buff_class, handle_direction, other_factory, config, modules=()):
 		"""
 		Protocol args:
 			factory: factory that made this protocol (subclass of BaseFactory)
@@ -135,14 +135,7 @@ class BaseProtocol(Protocol):
 		"""
 		Dispatch a packet based off name
 		"""
-		if not self.dispatch("_".join(("packet", "recv", name)), buff):
-			self.packet_unhandled(buff, name)
-
-	def packet_unhandled(self, buff, name):
-		"""
-		Called when a packet is not handled
-		"""
-		buff.discard()
+		self.dispatch("_".join(("packet", "recv", name)), buff)
 
 	def send_packet(self, name, *data):
 		"""
