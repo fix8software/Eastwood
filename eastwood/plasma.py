@@ -70,13 +70,12 @@ class ParallelCompressionInterface(object):
 		self.last_level = self.__global_level
 
 	def __jitter_setback_training(self) -> int:
-		jstrng = ThreadedModPseudoRandRestrictedRand()
 		increment = (2 ** 18) - 1
 		speed = 0
 		size = increment
 		level = int(round((self.__MAX_LEVEL + self.__MIN_LEVEL) / 2))
 		while speed < self.__target_speed / 2:
-			data = jstrng.random(size)
+			data = os.urandom(size)
 			tt = []
 			for _ in range(2):
 				st = time.time()
