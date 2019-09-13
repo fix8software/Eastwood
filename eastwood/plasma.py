@@ -22,20 +22,26 @@ __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSalt
 SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
-POOL_TYPE = 'concurrent.futures'
-THREAD_COUNT = cpu_count() * 2
 
-# Global Processing Pool
-if POOL_TYPE == 'concurrent.futures':
-	GLOBAL_POOL = ThreadPoolExecutor(max_workers = THREAD_COUNT)
-	Σ = GLOBAL_POOL.map
-elif POOL_TYPE == 'multiprocessing':
-	GLOBAL_POOL = ThreadPool(THREAD_COUNT)
-	Σ = GLOBAL_POOL.imap
-# Assign global symbol for thread count
-θ = THREAD_COUNT
+class ThreadMappedObject(object):
+	__POOL_TYPE = 'concurrent.futures'
+	__THREAD_COUNT = cpu_count() * 2
 
-class ParallelCompressionInterface(object):
+	def __init__(self):
+		pass
+
+	def __new__(cls, *args, **kwargs):
+		if cls.__POOL_TYPE == 'concurrent.futures':
+			cls.__GLOBAL_POOL = ThreadPoolExecutor(max_workers = cls.__THREAD_COUNT)
+			cls.Σ = cls.__GLOBAL_POOL.map
+		elif cls.__POOL_TYPE == 'multiprocessing':
+			cls.__GLOBAL_POOL = ThreadPool(cls.__THREAD_COUNT)
+			cls.Σ = cls.__GLOBAL_POOL.imap
+		cls.θ = cls.__THREAD_COUNT
+		
+		return object.__new__(cls)
+
+class ParallelCompressionInterface(ThreadMappedObject):
 	# zstd attributes
 	__MAX_LEVEL = 22
 	__MIN_LEVEL = 1
@@ -132,8 +138,8 @@ class ParallelCompressionInterface(object):
 			level = int(round((self.__global_level + suggested) / 2))
 
 		startt = time.time()
-		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / θ)))))
-		chunks = Σ(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
+		chunks = list(self.__chunks(input, (lambda x: x if x != 0 else 1)(int(round(len(input) / self.θ)))))
+		chunks = self.Σ(self.__internal_compression, [self.__level_arguments(c, level) for c in chunks])
 		result = b''.join(chunks)
 
 		msec = ((time.time() - startt) * 1000)
@@ -174,7 +180,7 @@ class ParallelCompressionInterface(object):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 
-		return b''.join(Σ(self.__internal_decompression, chunks))
+		return b''.join(self.Σ(self.__internal_decompression, chunks))
 
 	@staticmethod
 	def __compress(input: bytes, level: int = 6) -> bytes:
@@ -192,7 +198,7 @@ class ParallelCompressionInterface(object):
 	def __internal_decompression(self, input: bytes) -> bytes:
 		return self.__decompress(input)
 
-class _SingleThreadedAESCipher(object):
+class _SingleThreadedAESCipher(ThreadMappedObject):
 	__IV_SIZE = 12
 	__MODE = AES.MODE_GCM
 	__AES_NI = True
@@ -234,8 +240,8 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 		Args:
 			raw: Bytes to encrypt
 		"""
-		chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / θ)))))
-		chunks = Σ(self.__encapsulated_encryption, chunks)
+		chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / self.θ)))))
+		chunks = self.Σ(self.__encapsulated_encryption, chunks)
 		return b''.join(chunks)
 
 	def decrypt(self, enc: bytes) -> bytes:
@@ -250,7 +256,7 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
 			chunks.append(enc[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			enc = enc[SIZE_BYTES+chunk_length:]
 
-		return b''.join(Σ(super().decrypt, chunks))
+		return b''.join(self.Σ(super().decrypt, chunks))
 
 	@staticmethod
 	def __chunks(l, n):
@@ -271,7 +277,7 @@ def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, sa
 		raw = hashlib.sha512(raw + salt).digest()
 	return (raw, salt)
 
-class ModPseudoRand(object):
+class ModPseudoRand(ThreadMappedObject):
 	def __init__(self):
 		self.seed(os.urandom(16))
 
@@ -319,7 +325,7 @@ class CryptoModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 		
 class ThreadedModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 	def random(self, size: int = 1):
-		return b''.join(Σ(super().random, [math.ceil(size / θ) for _ in range(θ)]))[:size]
+		return b''.join(self.Σ(super().random, [math.ceil(size / self.θ) for _ in range(self.θ)]))[:size]
 	
 if __name__ == '__main__':
 	# THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
