@@ -28,7 +28,7 @@ class ThreadMappedObject(object):
 	__THREAD_COUNT = cpu_count() * 2
 
 	def __init__(self):
-		pass
+		super().__init__()
 
 	def __new__(cls, *args, **kwargs):
 		if cls.__POOL_TYPE == 'concurrent.futures':
