@@ -48,7 +48,7 @@ class _ZStandardParallelCompressionInterface(object):
 	__MAX_LEVEL = 22
 	__MIN_LEVEL = 1
 	
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 200):
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 80):
 		self.nodes = nodes
 		self.__target_speed = target_speed_ms
 		self.__average_time = deque([0], maxlen=128)
