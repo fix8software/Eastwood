@@ -46,7 +46,7 @@ class ParallelCompressionInterface(ThreadMappedObject):
 	__MAX_LEVEL = 22
 	__MIN_LEVEL = 1
 	__TOO_LOW_MAX = 8
-	__UNLEARN_INTERVAL_SECONDS = 20
+	__UNLEARN_INTERVAL_SECONDS = 60
 	__ATHS_START = 0x003FFFFF
 
 	"""
@@ -79,17 +79,21 @@ class ParallelCompressionInterface(ThreadMappedObject):
 		increment = (2 ** 18) - 1
 		speed = 0
 		size = increment
-		level = int(round((self.__MAX_LEVEL + self.__MIN_LEVEL) / 2))
-		while speed < self.__target_speed / 2:
-			data = os.urandom(size)
-			tt = []
-			for _ in range(2):
-				st = time.time()
-				__ = self.compress(data, level)
-				tt.append((time.time() - st) * 1000)
-			speed = sum(tt) / len(tt)
+		# level = int(round((self.__MAX_LEVEL + self.__MIN_LEVEL) / 2))
+		level = self.__MAX_LEVEL
+		while speed < self.__target_speed:
+			data = token_bytes(size)
+			# tt = []
+			# for _ in range(2):
+			# 	st = time.time()
+			# 	__ = self.compress(data, level)
+			# 	tt.append((time.time() - st) * 1000)
+			# speed = sum(tt) / len(tt)
+			st = time.time()
+			__ = self.compress(data, level)
+			speed = (time.time() - st) * 1000
 			size += increment
-		return size * 3
+		return size * 4
 
 	def __jitter_training_reinitialization_thread(self):
 		while True:
