@@ -12,7 +12,9 @@ from multiprocessing import Pool
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from threading import Thread
 from secrets import token_bytes
-import zstandard as zstd, zlib, time, os, hashlib, random, math
+from collections import deque
+import zstandard as zstd
+import zlib, time, os, hashlib, random, math
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -46,9 +48,13 @@ class _ZStandardParallelCompressionInterface(object):
 	__MAX_LEVEL = 22
 	__MIN_LEVEL = 1
 	
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 150):
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 200):
 		self.nodes = nodes
+		self.__target_speed = target_speed_ms
+		self.__average_time = deque([0], maxlen=8)
+		
 		self.last_level = self.__MAX_LEVEL
+		self.__global_level = self.__MAX_LEVEL
 		
 		self.__create_zstandard_D()
 		
@@ -57,12 +63,27 @@ class _ZStandardParallelCompressionInterface(object):
 		
 	def compress(self, input: bytes, level: int = -1):
 		if level < self.__MIN_LEVEL:
-			level = self.__MAX_LEVEL
+			flevel = self.__global_level
+		else:
+			flevel = level
 	
-		x = zstd.ZstdCompressor(level = level, threads = self.nodes)
-		return x.compress(input)
+		startt = time.time()
+		x = zstd.ZstdCompressor(level = flevel, threads = self.nodes)
+		y = x.compress(input)
 		
-		self.last_level = level
+		if level < self.__MIN_LEVEL:
+			msec = ((time.time() - startt) * 1000)
+			self.__average_time.append(((sum(self.__average_time) / len(self.__average_time)) + msec) / 2)
+
+			averaged = self.__average_time[-1]
+			
+			if averaged > self.__target_speed and self.__global_level > self.__MIN_LEVEL:
+				self.__global_level -= 1
+			elif averaged < self.__target_speed and self.__global_level < self.__MAX_LEVEL:
+				self.__global_level += 1
+		
+		self.last_level = flevel
+		return y
 		
 	def decompress(self, input: bytes) -> bytes:
 		return self.decompressionObject.decompress(input)
@@ -388,7 +409,7 @@ if __name__ == '__main__':
 	for _ in range(8):
 		st = time.time()
 		a = x.compress(data)
-		print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level))
+		print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level) + ' - ' + str(len(a)))
 	b = x.decompress(a)
 	assert b == data
 
