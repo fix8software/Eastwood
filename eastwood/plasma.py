@@ -24,7 +24,7 @@ META_BYTES = 1
 BYTE_ORDER = 'little'
 
 class ThreadMappedObject(object):
-	__POOL_TYPE = 'concurrent.futures'
+	__POOL_TYPE = 'multiprocessing'
 	__THREAD_COUNT = cpu_count() * 2
 
 	def __init__(self):
