@@ -12,7 +12,7 @@ from multiprocessing import Pool
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from threading import Thread
 from secrets import token_bytes
-import zstd, zlib, time, os, hashlib, random, math
+import zstandard as zstd, zlib, time, os, hashlib, random, math
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -40,6 +40,32 @@ class ThreadMappedObject(object):
 		cls.θ = cls.__THREAD_COUNT
 		
 		return object.__new__(cls)
+
+class _ZStandardParallelCompressionInterface(object):
+	# zstd attributes
+	__MAX_LEVEL = 22
+	__MIN_LEVEL = 1
+	
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 150):
+		self.nodes = nodes
+		self.last_level = self.__MAX_LEVEL
+		
+		self.__create_zstandard_D()
+		
+	def __create_zstandard_D(self):
+		self.decompressionObject = zstd.ZstdDecompressor()
+		
+	def compress(self, input: bytes, level: int = -1):
+		if level < self.__MIN_LEVEL:
+			level = self.__MAX_LEVEL
+	
+		x = zstd.ZstdCompressor(level = level, threads = self.nodes)
+		return x.compress(input)
+		
+		self.last_level = level
+		
+	def decompress(self, input: bytes) -> bytes:
+		return self.decompressionObject.decompress(input)
 
 class ParallelCompressionInterface(ThreadMappedObject):
 	# zstd attributes
@@ -201,6 +227,8 @@ class ParallelCompressionInterface(ThreadMappedObject):
 
 	def __internal_decompression(self, input: bytes) -> bytes:
 		return self.__decompress(input)
+
+ParallelCompressionInterface = _ZStandardParallelCompressionInterface
 
 class _SingleThreadedAESCipher(ThreadMappedObject):
 	__IV_SIZE = 12
