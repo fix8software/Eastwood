@@ -93,7 +93,7 @@ class ChunkCacher(Module):
 			# Chunk is cached, update
 
 			# Unpack rest of data
-			block = buff.registry.decode_block(buff.unpack_varint())
+			block = buff.unpack_varint()
 			self.set_blocks(chunk_key, (cy, bx, by, bz, block))
 
 	def packet_send_multi_block_change(self, buff):
@@ -114,7 +114,7 @@ class ChunkCacher(Module):
 				x = horiz_pos >> 4 & 15 # Relative block positions
 				cy, y = divmod(vert_pos, 16) # Need chunk and relative for y
 				z = horiz_pos & 15
-				block = buff.registry.decode_block(buff.unpack_varint())
+				block = buff.unpack_varint()
 
 				# Append to record list
 				records.append((cy, x, y, z, block))
@@ -132,10 +132,11 @@ class ChunkCacher(Module):
 		sections, biomes = self.get_chunk_sections(key) # Get chunk
 
 		for change in blocks:
-			sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
+			# sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
+			pass
 
 		# Save chunk section
-		self.save_chunk_sections(key, sections, biomes)
+		self.set_chunk_sections(key, sections, biomes)
 
 	def get_chunk_sections(self, key):
 		"""
@@ -155,10 +156,7 @@ class ChunkCacher(Module):
 			if prim_bit_mask & (1 << i): # Chunk exists
 				sections.append(column.unpack_chunk_section())
 			else: # Chunk doesn't exist
-				if not self.dimension: # Overworld also returns skylight data
-					sections.append(BlockArray.empty(column.registry))
-				else:
-					sections.append(BlockArray.empty(column.registry))
+				sections.append(BlockArray.empty(column.registry))
 
 		return sections, column.unpack("I" * 256) # Biome data is stored after chunk sections, this is used for repacking
 
@@ -184,18 +182,18 @@ class ChunkCacher(Module):
 		for i, section in enumerate(sections):
 			if not section.is_empty():
 				prim_bit_mask |= 1 << i
-				new_data = b"".join(new_data, self.protocol.buff_class.pack_chunk_section(section))
+				new_data = b"".join((new_data, self.protocol.buff_class.pack_chunk_section(section)))
 
 		# Repack cached data
-		cached_data = b"".join(self.protocol.buff_class.pack_varint(prim_bit_mask),
+		cached_data = b"".join((self.protocol.buff_class.pack_varint(prim_bit_mask),
 							self.protocol.buff_class.pack_nbt(heightmap),
 							self.protocol.buff_class.pack_varint(len(new_data)),
 							new_data,
-							self.protocol.buff_class.pack("I"*256, biomes),
-							tile_entity_data)
+							self.protocol.buff_class.pack("I"*256, *biomes),
+							tile_entity_data))
 
 		# Save new data
-		self.protocol.factory.caches[self.dimension].update(key, cached_data)
+		self.protocol.factory.caches[self.dimension].insert(key, cached_data)
 
 	def generate_cached_chunk_packet(self, key):
 		"""

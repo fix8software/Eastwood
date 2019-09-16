@@ -18,7 +18,7 @@ class Cache(object):
 
 		self.cursor.execute('CREATE TABLE IF NOT EXISTS elements (identifier BLOB, accessed INTEGER, data BLOB);')
 		try:
-			self.cursor.execute('CREATE UNIQUE INDEX idx_elements_accessed ON elements (accessed);')
+			self.cursor.execute('CREATE INDEX idx_elements_accessed ON elements (accessed);')
 		except:
 			pass
 
@@ -40,10 +40,6 @@ class Cache(object):
 
 	def destroy(self, identifier: bytes):
 		self.cursor.execute('DELETE FROM elements WHERE identifier = ?', (identifier,))
-		self.__regcall()
-
-	def update(self, identifier: bytes, data: bytes):
-		self.insert(identifier, data)
 		self.__regcall()
 
 	def get(self, identifier: bytes):
