@@ -14,7 +14,7 @@ from threading import Thread
 from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
-import zlib, time, os, hashlib, random, math
+import zlib, time, os, hashlib, random, math, copy
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -48,22 +48,60 @@ class _ZStandardParallelCompressionInterface(object):
 	__MAX_LEVEL = 22
 	__MIN_LEVEL = 1
 	
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 80):
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 50, target_speed_buf: int = 10):
 		self.nodes = nodes
 		self.__target_speed = target_speed_ms
+		self.__target_buf = target_speed_buf
 		self.__average_time = deque([0], maxlen=8192)
+		self.__table = {}
 		
 		self.last_level = self.__MAX_LEVEL
 		self.__global_level = self.__MAX_LEVEL
 		
 		self.__create_zstandard_D()
+		self.__create_level_table()
+		
+	def __create_level_table(self):
+		self.__table = {}
+		self.__table_size = 16384
+		
+		crand = ThreadedModPseudoRandRestrictedRand()
+		data = [
+			token_bytes(self.__table_size),
+			os.urandom(self.__table_size),
+			crand.random(self.__table_size),
+			b'\x00' * self.__table_size
+		]
+		
+		for x in data:
+			# This, for some reason, helps get a better result on
+			# the first level during the real task. ¯\_(ツ)_/¯
+			__ = self.compress(x, self.__MIN_LEVEL)
+		
+		for level in range(self.__MIN_LEVEL, self.__MAX_LEVEL + 1):
+			times = []
+			for x in data:
+				for _ in range(2):
+					s = time.time()
+					__ = self.compress(x, level)
+					t = time.time() - s
+					times.append(t)
+			a = sum(times) / len(times)
+			timebyte = (a / self.__table_size)
+		
+			self.__table[level] = (timebyte)
 		
 	def __create_zstandard_D(self):
 		self.decompressionObject = zstd.ZstdDecompressor()
 		
 	def compress(self, input: bytes, level: int = -1):
 		if level < self.__MIN_LEVEL:
-			flevel = self.__global_level
+			accept_level = 0
+			for k, v in self.__table.items():
+				if ((v * len(input)) * 1000) < self.__target_speed + self.__target_buf:
+					accept_level = k
+		
+			flevel = int(round((self.__global_level + accept_level) / 2))
 		else:
 			flevel = level
 	
@@ -79,7 +117,7 @@ class _ZStandardParallelCompressionInterface(object):
 			
 			if averaged > self.__target_speed and self.__global_level > self.__MIN_LEVEL:
 				self.__global_level -= 1
-			elif averaged < self.__target_speed and self.__global_level < self.__MAX_LEVEL:
+			elif averaged < self.__target_speed - self.__target_buf and self.__global_level < self.__MAX_LEVEL:
 				self.__global_level += 1
 		
 		self.last_level = flevel
