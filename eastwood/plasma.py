@@ -96,7 +96,7 @@ class _ZStandardParallelCompressionInterface(object):
 		
 	def compress(self, input: bytes, level: int = -1):
 		if level < self.__MIN_LEVEL:
-			accept_level = self.__MAX_LEVEL
+			accept_level = self.__MIN_LEVEL
 			for k, v in self.__table.items():
 				if ((v * len(input)) * 1000) < self.__target_speed + self.__target_buf:
 					accept_level = k
