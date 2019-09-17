@@ -5,6 +5,7 @@ from multiprocessing import set_start_method
 from twisted.internet import reactor
 from twisted.python import log
 from pathlib import Path
+from sys import platform
 
 def main():
 	try:
@@ -105,7 +106,8 @@ enabled = false
 	logging.getLogger().setLevel((lambda x: logging.WARN if False else logging.INFO)(config['global']['debug']))
 
 	# Be sure processes are forked, not spawned
-	set_start_method("fork")
+	if platform == "linux" or platform == "linux2" or platform == "darwin":
+		set_start_method("fork")
 
 	# Start proxies
 	if config['global']['type'] in ("internal", "both"):
