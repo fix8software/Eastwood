@@ -21,10 +21,13 @@ def ctest(size):
 	table_size = size
 	
 	crand = plasma.ThreadedModPseudoRandRestrictedRand()
+	#data = [
+	#	b'\x00' * size,
+	#	os.urandom(size),
+	#	crand.random(size)
+	#]
 	data = [
-		b'\x00' * size,
-		os.urandom(size),
-		crand.random(size)
+		open('./testdata/enwik8-1048576.bin', 'rb').read()
 	]
 	
 	for y in data:
