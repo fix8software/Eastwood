@@ -1,17 +1,21 @@
 import matplotlib.pyplot as plt
 from functools import reduce
 import plasma, os, time, numpy as np
-
-from mpl_toolkits.mplot3d import Axes3D
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
+import lzma, zlib, bz2
 
 x = plasma.ParallelCompressionInterface()
 
-def ctest(size):
-	MIN_LEVEL = 1
-	MAX_LEVEL = 22
+MIN_LEVEL = 1
+MAX_LEVEL = 22
+algo = x
 
+def compress(b: bytes, l: int) -> bytes:
+	return algo.compress(b, l)
+	
+def decompress(b: bytes) -> bytes:
+	return algo.decompress(b)
+
+def ctest(size):
 	table = {}
 	stable = {}
 	table_size = size
@@ -24,7 +28,7 @@ def ctest(size):
 	]
 	
 	for y in data:
-		__ = x.compress(y, MIN_LEVEL)
+		__ = compress(y, MIN_LEVEL)
 	
 	for level in range(MIN_LEVEL, MAX_LEVEL + 1):
 		times = []
@@ -32,7 +36,7 @@ def ctest(size):
 		for y in data:
 			for _ in range(2):
 				s = time.time()
-				__ = x.compress(y, level)
+				__ = compress(y, level)
 				t = time.time() - s
 				times.append(t)
 			sizes.append(len(__))
@@ -43,10 +47,18 @@ def ctest(size):
 		stable[level] = b
 		table[level] = (timebyte)
 
-	return np.array(list(table.keys())), np.array(list(stable.values())), np.array([i * 1000 * 1000 * 1000 for i in list(table.values())])
+	return list(table.keys()), list(stable.values()), [i * 1000 * 1000 * 1000 for i in list(table.values())]
 
-X, Y, Z = ctest(2 ** 18 - 1)
-ax.plot_trisurf(X, Y, Z, linewidth=0.9, antialiased=True)
-plt.ylabel('Size')
-plt.xlabel('Level')
+X, Y, Z = ctest(2 ** 16 - 1)
+normY = [float(i)/sum(Y) for i in Y]
+normY = [i * 1000 for i in normY]
+plt.subplot(2, 1, 1)
+plt.plot(X, Z)
+plt.title('Algo: '+str(repr(algo)))
+plt.ylabel('time per byte (ns/B)')
+
+plt.subplot(2, 1, 2)
+plt.plot(X, Y)
+plt.xlabel('level')
+plt.ylabel('size (B)')
 plt.show()
