@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 from functools import reduce
 import plasma, os, time, numpy as np
-import lzma, zlib, bz2
+import lzma, zlib, bz2, progressbar
 
 x = plasma.ParallelCompressionInterface()
 
@@ -27,13 +27,13 @@ def ctest(size):
 	#	crand.random(size)
 	#]
 	data = [
-		open('./testdata/packet_samples.bin', 'rb').read()
+		open('./testdata/large_packet_sample.bin', 'rb').read()
 	]
 	
 	for y in data:
 		__ = compress(y, MIN_LEVEL)
 	
-	for level in range(MIN_LEVEL, MAX_LEVEL + 1):
+	for level in progressbar.progressbar(range(MIN_LEVEL, MAX_LEVEL + 1)):
 		times = []
 		sizes = []
 		for y in data:
