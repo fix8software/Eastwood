@@ -27,7 +27,7 @@ def ctest(size):
 	#	crand.random(size)
 	#]
 	data = [
-		open('./testdata/enwik8-1048576.bin', 'rb').read()
+		open('./testdata/packet_samples.bin', 'rb').read()
 	]
 	
 	for y in data:
