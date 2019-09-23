@@ -153,7 +153,7 @@ class ChunkCacher(Module):
 		if not cached_data:
 			return (None, None)
 
-		column = self.protocol.buff_class()
+		column = self.protocol.buff_class(cached_data)
 		prim_bit_mask = column.unpack_varint()
 		column.unpack_nbt() # Ignore heightmap
 
