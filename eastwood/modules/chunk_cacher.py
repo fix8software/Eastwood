@@ -2,12 +2,11 @@
 Chunk caching system to reduce the netusage of the most expensive packet to send (chunk data packets)
 """
 from collections import defaultdict
-from quarry.types.chunk import BlockArray
 
 from eastwood.bincache import Cache
 from eastwood.modules import Module
 
-THRESHOLD = 1 # Chunk data should be pulled x times before entering the cache (Should be greater than zero)
+THRESHOLD = 0 # Chunk data should be pulled x times before entering the cache (Should be greater than zero)
 
 class ChunkCacher(Module):
 	"""
@@ -132,7 +131,7 @@ class ChunkCacher(Module):
 		sections, biomes = self.get_chunk_sections(key) # Get chunk
 
 		for change in blocks:
-			# sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
+			sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
 			pass
 
 		# Save chunk section
@@ -151,14 +150,7 @@ class ChunkCacher(Module):
 		prim_bit_mask = column.unpack_varint()
 		column.unpack_nbt() # Ignore heightmap
 
-		sections = []
-		for i in range(16):
-			if prim_bit_mask & (1 << i): # Chunk exists
-				sections.append(column.unpack_chunk_section())
-			else: # Chunk doesn't exist
-				sections.append(BlockArray.empty(column.registry))
-
-		return sections, column.unpack("I" * 256) # Biome data is stored after chunk sections, this is used for repacking
+		return column.unpack_chunk(prim_bit_mask) # Biome data is stored after chunk sections, this is used for repacking
 
 	def set_chunk_sections(self, key, sections, biomes):
 		"""
@@ -176,20 +168,10 @@ class ChunkCacher(Module):
 		column.read(length=column.unpack_varint()) # Ignore current chunk data
 		tile_entity_data = column.read() # We won't mess with this
 
-		# Generate new chunk section data
-		prim_bit_mask = 0
-		new_data = b""
-		for i, section in enumerate(sections):
-			if not section.is_empty():
-				prim_bit_mask |= 1 << i
-				new_data = b"".join((new_data, self.protocol.buff_class.pack_chunk_section(section)))
-
 		# Repack cached data
-		cached_data = b"".join((self.protocol.buff_class.pack_varint(prim_bit_mask),
+		cached_data = b"".join((self.protocol.buff_class.pack_chunk_bitmask(sections),
 							self.protocol.buff_class.pack_nbt(heightmap),
-							self.protocol.buff_class.pack_varint(len(new_data)),
-							new_data,
-							self.protocol.buff_class.pack("I"*256, *biomes),
+							self.protocol.buff_class.pack_chunk(sections, biomes),
 							tile_entity_data))
 
 		# Save new data
