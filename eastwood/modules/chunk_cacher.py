@@ -129,6 +129,10 @@ class ChunkCacher(Module):
 			blocks: tuples of (cy, x, y, z, block_id) Note that the coords are relative to the chunk (cy is the section to modify)
 		"""
 		sections, biomes = self.get_chunk_sections(key) # Get chunk
+		if not sections or not biomes:
+			# Data is gone! Ignore the change request
+			self.handle_missing_data(key)
+			return
 
 		for change in blocks:
 			sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
@@ -145,7 +149,11 @@ class ChunkCacher(Module):
 			sections: list of BlockArray chunk sections
 			biomes: list of biome data
 		"""
-		column = self.protocol.buff_class(self.protocol.factory.caches[self.dimension].get(key))
+		cached_data = self.protocol.factory.caches[self.dimension].get(key)
+		if not cached_data:
+			return (None, None)
+
+		column = self.protocol.buff_class()
 		prim_bit_mask = column.unpack_varint()
 		column.unpack_nbt() # Ignore heightmap
 
@@ -183,9 +191,15 @@ class ChunkCacher(Module):
 			key: chunk x and z
 		"""
 		cached_data = self.protocol.factory.caches[self.dimension].get(key)
-		if cached_data == None:
-			del self.protocol.factory.tracker[key] # Reset the counter since the chunk is no longer cached
-			self.protocol.other_factory.send_packet("toggle_chunk", b"".join((self.protocol.buff_class.pack_varint(self.dimension), key))) # Tell the other protocol that it is no longer cached
+		if not cached_data:
+			self.handle_missing_data(key)
 			return None
 
 		return b"".join((key, self.protocol.buff_class.pack("?", True), cached_data))
+
+	def handle_missing_data(self, key):
+		"""
+		Call when chunk data is missing from the database
+		"""
+		del self.protocol.factory.tracker[key] # Reset the counter since the chunk is no longer cached
+		self.protocol.other_factory.send_packet("toggle_chunk", b"".join((self.protocol.buff_class.pack_varint(self.dimension), key))) # Tell the other protocol that it is no longer cached
