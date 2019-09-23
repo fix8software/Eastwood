@@ -35,7 +35,11 @@ class Cache(object):
 		self.connection.close()
 
 	def insert(self, identifier: bytes, data: bytes):
-		self.cursor.execute('INSERT OR REPLACE INTO elements (identifier, accessed, data) VALUES (?, ?, ?);', (identifier, time.time(), data))
+		self.cursor.execute('INSERT INTO elements (identifier, accessed, data) VALUES (?, ?, ?);', (identifier, time.time(), data))
+		self.__regcall()
+
+	def update(self, identifier: bytes, data: bytes):
+		self.cursor.execute('UPDATE elements SET accessed = ?, data = ? WHERE identifier = ?', (time.time(), data, identifier))
 		self.__regcall()
 
 	def destroy(self, identifier: bytes):

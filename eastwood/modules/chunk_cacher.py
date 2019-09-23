@@ -132,7 +132,6 @@ class ChunkCacher(Module):
 
 		for change in blocks:
 			sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
-			pass
 
 		# Save chunk section
 		self.set_chunk_sections(key, sections, biomes)
@@ -175,7 +174,7 @@ class ChunkCacher(Module):
 							tile_entity_data))
 
 		# Save new data
-		self.protocol.factory.caches[self.dimension].insert(key, cached_data)
+		self.protocol.factory.caches[self.dimension].update(key, cached_data)
 
 	def generate_cached_chunk_packet(self, key):
 		"""
