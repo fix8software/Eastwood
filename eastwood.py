@@ -93,6 +93,9 @@ player_limit = 65535
 # Warning: This feature is experimental, and will most likely raise stupid
 # amounts of exceptions. You have been warned.
 enabled = false
+
+# Chunk data should be pulled x times before entering the cache
+threshold = 5
 """.format(datetime.datetime.now(), secrets.token_urlsafe(25), secrets.token_urlsafe(25), 'Eastwood'))
 		print('Config file generated at '+config_location+', please modify it.')
 		return

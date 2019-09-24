@@ -6,8 +6,6 @@ from collections import defaultdict
 from eastwood.bincache import Cache
 from eastwood.modules import Module
 
-THRESHOLD = 0 # Chunk data should be pulled x times before entering the cache (Should be greater than zero)
-
 class ChunkCacher(Module):
 	"""
 	External Proxy (MCProtocol) module that intercepts and caches chunk data in ram
@@ -19,6 +17,7 @@ class ChunkCacher(Module):
 	# https://github.com/barneygale/minebnc/blob/master/plugins/world.py
 	def __init__(self, protocol):
 		super().__init__(protocol)
+		self.threshold = self.protocol.config["chunk_caching"]["threshold"]
 		self.dimension = 0 # Player dimension, used for tracking chunks
 
 		if not hasattr(self.protocol.factory, "caches"):
@@ -50,7 +49,7 @@ class ChunkCacher(Module):
 
 		if not full_chunk:
 			# Non full chunks act as a large multiblockchange
-			if self.protocol.factory.tracker[chunk_key] <= THRESHOLD: # Check if chunk is cached
+			if self.protocol.factory.tracker[chunk_key] <= self.threshold: # Check if chunk is cached
 				return # Ignore uncached changes
 
 			# Unpack cached sections
@@ -82,7 +81,7 @@ class ChunkCacher(Module):
 			self.set_tile_entities(chunk_key, tile_entities)
 			return
 
-		if self.protocol.factory.tracker[chunk_key] < THRESHOLD:
+		if self.protocol.factory.tracker[chunk_key] < self.threshold:
 			# Chunk hasn't been pulled enough to warrant caching
 			self.protocol.factory.tracker[chunk_key] += 1
 			return
@@ -98,7 +97,7 @@ class ChunkCacher(Module):
 		# The cache stores the everything in the chunk data packet after the full chunk bool
 		self.protocol.factory.caches[self.dimension].insert(chunk_key, data)
 
-		# A chunk with a tracker value > THRESHOLD will recieve chunk updates
+		# A chunk with a tracker value > self.threshold will recieve chunk updates
 		# This should be allowed since the data is cached
 		self.protocol.factory.tracker[chunk_key] += 1
 
@@ -118,7 +117,7 @@ class ChunkCacher(Module):
 		cz, bz = divmod(z, 16)
 
 		chunk_key = self.protocol.buff_class.pack("ii", cx, cz) # Get chunk key
-		if self.protocol.factory.tracker[chunk_key] > THRESHOLD: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
+		if self.protocol.factory.tracker[chunk_key] > self.threshold: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
 			# Chunk is cached, update
 
 			# Unpack rest of data
@@ -155,7 +154,7 @@ class ChunkCacher(Module):
 
 		# Call set_blocks for each chunk section
 		for key, values in records.items():
-			if self.protocol.factory.tracker[key] > THRESHOLD: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
+			if self.protocol.factory.tracker[key] > self.threshold: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
 				# Chunk is cached, update
 				self.set_blocks(key, *values)
 
@@ -168,7 +167,7 @@ class ChunkCacher(Module):
 		chunk_x, chunk_z  = buff.unpack("ii") # Use the chunk x and z values in bytes as the key
 		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
 
-		if self.protocol.factory.tracker[chunk_key] > THRESHOLD: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
+		if self.protocol.factory.tracker[chunk_key] > self.threshold: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
 			# Chunk is cached, update
 
 			# Unpack rest of data
@@ -196,7 +195,7 @@ class ChunkCacher(Module):
 		chunk_key = self.protocol.buff_class("ii", x // 16, z // 16) # Get chunk key
 
 		# Check if the chunk is cached
-		if self.protocol.factory.tracker[chunk_key] > THRESHOLD:
+		if self.protocol.factory.tracker[chunk_key] > self.threshold:
 			# Get tile entities
 			tile_entities = self.get_tile_entities(chunk_key)
 			if not tile_entities:
