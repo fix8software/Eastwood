@@ -49,7 +49,29 @@ class ChunkCacher(Module):
 		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
 
 		if not full_chunk:
-			# Full chunk just creates an empty chunk to be manipulated for the client. We can ignore this.
+			# Non full chunks act as a large multiblockchange
+			if self.protocol.factory.tracker[chunk_key] <= THRESHOLD: # Check if chunk is cached
+				return # Ignore uncached changes
+
+			# Unpack cached sections
+			sections, biomes = self.get_chunk_sections(chunk_key) # Get chunk
+			if not sections or not biomes:
+				# Data is gone! Ignore the change request
+				self.handle_missing_data(chunk_key)
+				return
+
+			# Unpack changed sections
+			changed_sections = buff.unpack_chunk(buff.unpack_varint()) # Varint is the bitmask
+
+			# Apply new sections if they are not empty
+			for i, new_section in enumerate(changed_sections):
+				if not new_section.is_empty():
+					sections[i] = new_section
+
+			# Update cache
+			self.set_chunk_sections(chunk_key, sections, biomes)
+
+			# TODO: Update block entities
 			return
 
 		if self.protocol.factory.tracker[chunk_key] < THRESHOLD:
