@@ -179,6 +179,39 @@ class ChunkCacher(Module):
 			# Call set_blocks with data
 			self.set_blocks(chunk_key, *records)
 
+	def packet_send_update_block_entity(self, buff):
+		"""
+		Updates a tile entity, could be add modify or remove
+		"""
+		# Get enough info for the chunk key
+		x, y, z = buff.unpack_position()
+		chunk_key = self.protocol.buff_class("ii", x // 16, z // 16) # Get chunk key
+
+		# Check if the chunk is cached
+		if self.protocol.factory.tracker[chunk_key] > THRESHOLD:
+			# Get tile entities
+			tile_entities = self.get_tile_entities(chunk_key)
+			if not tile_entities:
+				# Chunk no longer exists
+				self.handle_missing_data(chunk_key)
+				return
+
+			# Unpack rest of data
+			buff.unpack('B') # We don't care about the action
+			new_tag = buff.unpack_nbt()
+			old_tag = tile_entities.get((x, y, z))
+
+			# Update tag
+			if old_tag and not new_tag:
+				del tile_entities[(x, y, z)]
+			elif not old_tag and new_tag:
+				tile_entities[(x, y, z)] = new_tag
+			elif old_tag and new_tag:
+				old_tag.update(new_tag)
+
+			# Apply update
+			self.set_tile_entities(chunk_key, tile_entities)
+
 	def set_blocks(self, key, *blocks):
 		"""
 		Sets blocks in a cached chunk
