@@ -71,7 +71,15 @@ class ChunkCacher(Module):
 			# Update cache
 			self.set_chunk_sections(chunk_key, sections, biomes)
 
-			# TODO: Update block entities
+			# Update block entities
+			tile_entities = {}
+			for _ in range(buff.unpack_varint()): # Loop through every tile entity
+				tile_entity = buff.unpack_nbt()
+				te_obj = tile_entity.te_obj()[""]
+
+				tile_entities[(te_obj["x"], te_obj["y"], te_obj["z"])] = tile_entities
+
+			self.set_tile_entities(chunk_key, tile_entities)
 			return
 
 		if self.protocol.factory.tracker[chunk_key] < THRESHOLD:
