@@ -95,6 +95,42 @@ class ChunkCacher(Module):
 			block = buff.unpack_varint()
 			self.set_blocks(chunk_key, (cy, bx, by, bz, block))
 
+	def packet_send_explosion(self, buff):
+		"""
+		Called when there is an explosion
+		"""
+		# Unpack explosion point
+		x, y, z, _ = buff.unpack("ffff")
+
+		# Unpack each record (they may not all be in only one chunk)
+		records = defaultdict(list)
+		for _ in range(buff.unpack('i')):
+			dx, dy, dz = buff.unpack("bbb") # Unpack offsets for each record
+
+			# Get chunk and relative positions
+			cx, bx = divmod(x + dx, 16)
+			cy, by = divmod(y + dy, 16)
+			cz, bz = divmod(z + dz, 16)
+			cx = int(cx)
+			cy = int(cy)
+			cz = int(cz)
+			bx = int(bx)
+			by = int(by)
+			bz = int(bz)
+
+			chunk_key = self.protocol.buff_class.pack("ii", cx, cz) # Get chunk key
+
+			# Append to records
+			records[chunk_key].append((cy, bx, by, bz, 0))
+
+		# Call set_blocks for each chunk section
+		for key, values in records.items():
+			if self.protocol.factory.tracker[key] > THRESHOLD: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
+				# Chunk is cached, update
+				self.set_blocks(key, *values)
+
+		# Player motion values are ignored
+
 	def packet_send_multi_block_change(self, buff):
 		"""
 		Called when there is a multi block change
