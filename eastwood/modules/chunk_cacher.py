@@ -255,6 +255,63 @@ class ChunkCacher(Module):
 
 		return b"".join((key, self.protocol.buff_class.pack("?", True), cached_data))
 
+	def get_tile_entities(self, key):
+		"""
+		Gets block entities as a dictionary of nbt tags
+		Args:
+			key: chunk key
+		Returns:
+			dict: tile entities as nbt tags, or None if chunk is no longer cached
+		"""
+		# Get cached chunk
+		cached_data = self.protocol.factory.caches[self.dimension].get(key)
+		if not cached_data:
+			return None
+
+		chunk = self.protocol.buff_class(cached_data)
+
+		# Read through all the unimportant stuff
+		chunk.unpack("ii?")
+		chunk.unpack_varint()
+		chunk.unpack_nbt()
+		chunk.read(chunk.unpack_varint())
+
+		# Parse the nbt data
+		tile_entities = {}
+		for _ in range(chunk.unpack_varint()): # Loop through every tile entity
+			tile_entity = chunk.unpack_nbt()
+			te_obj = tile_entity.te_obj()[""]
+
+			tile_entities[(te_obj["x"], te_obj["y"], te_obj["z"])] = tile_entities
+
+		return tile_entities
+
+	def set_tile_entities(self, key, tile_entities):
+		"""
+		Applies tile_entities to a cached chunk
+		Args:
+			key: chunk key
+			tile_entities: tile entities as nbt tags
+		"""
+		column = self.protocol.buff_class(self.protocol.factory.caches[self.dimension].get(key))
+
+		# Get other chunk data
+		prim_bit_mask = column.unpack_varint()
+		heightmap = column.unpack_nbt()
+		chunk_data = column.read(length=column.unpack_varint())
+		column.read() # Ignore chunk data
+
+		# Repack cached data with new tile entity data
+		cached_data = b"".join((self.protocol.buff_class.pack_varint(prim_bit_mask),
+							self.protocol.buff_class.pack_nbt(heightmap),
+							self.protocol.buff_class.pack_varint(len(chunk_data)),
+							chunk_data,
+							self.protocol.buff_class.pack_varint(len(tile_entities)),
+							*[self.protocol.buff_class.pack_nbt(e) for e in tile_entities.values()]))
+
+		# Save new data
+		self.protocol.factory.caches[self.dimension].update(key, cached_data)
+
 	def handle_missing_data(self, key):
 		"""
 		Call when chunk data is missing from the database
