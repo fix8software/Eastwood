@@ -20,8 +20,15 @@ class ChunkCacher(Module):
 		self.threshold = self.protocol.config["chunk_caching"]["threshold"]
 		self.dimension = 0 # Player dimension, used for tracking chunks
 
+		# Generate path extensions
+		path0, path1, path2 = self.protocol.config["chunk_caching"]["path"]
+		if path0 != ":memory:":
+			path0 += "_nether.db"
+			path1 += "_overworld.db"
+			path2 += "_end.db"
+
 		if not hasattr(self.protocol.factory, "caches"):
-			self.protocol.factory.caches = {-1: Cache(), 0: Cache(), 1: Cache()} # Bincache for each dimension (-1=Nether, 0=Overworld, 1=End)
+			self.protocol.factory.caches = {-1: Cache(path=path0), 0: Cache(path=path1), 1: Cache(path=path2)} # Bincache for each dimension (-1=Nether, 0=Overworld, 1=End)
 		if not hasattr(self.protocol.factory, "tracker"):
 			self.protocol.factory.tracker = {-1: defaultdict(int), 0: defaultdict(int), 1: defaultdict(int)} # Dictionary to keep track of the amount of times chunks has been pulled
 

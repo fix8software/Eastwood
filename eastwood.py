@@ -96,6 +96,11 @@ enabled = false
 
 # Chunk data should be pulled x times before entering the cache
 threshold = 5
+
+# Set the path value to a filename to enable on-disk caching. The filename will
+# be postpended with the dimension and a .db filetype. Set to ":memory:" to use
+# in ram caching instead. In memory is recommended, however it isn't persistant.
+path = ":memory:"
 """.format(datetime.datetime.now(), secrets.token_urlsafe(25), secrets.token_urlsafe(25), 'Eastwood'))
 		print('Config file generated at '+config_location+', please modify it.')
 		return
