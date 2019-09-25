@@ -23,7 +23,17 @@ class ChunkCacher(Module):
 		if not hasattr(self.protocol.factory, "caches"):
 			self.protocol.factory.caches = {-1: Cache(), 0: Cache(), 1: Cache()} # Bincache for each dimension (-1=Nether, 0=Overworld, 1=End)
 		if not hasattr(self.protocol.factory, "tracker"):
-			self.protocol.factory.tracker = defaultdict(int) # Dictionary to keep track of the amount of times chunks has been pulled
+			self.protocol.factory.tracker = {-1: defaultdict(int), 0: defaultdict(int), 1: defaultdict(int)} # Dictionary to keep track of the amount of times chunks has been pulled
+
+	def connectionMade(self):
+		"""
+		Loads cached chunks into the tracker
+		Also sends over toggle_chunk packets for already cached chunks
+		"""
+		for i in self.protocol.factory.caches.keys():
+			for ident in self.protocol.factory.caches[i].get_all_identifiers():
+				self.protocol.factory.tracker[i][ident] = self.threshold + 1 # Set tracker to read from it
+				self.protocol.other_factory.send_packet("toggle_chunk", self.protocol.buff_class.pack_varint(i), ident) # Send toggle_chunk
 
 	def packet_send_join_game(self, buff):
 		"""
@@ -49,7 +59,7 @@ class ChunkCacher(Module):
 
 		if not full_chunk:
 			# Non full chunks act as a large multiblockchange
-			if self.protocol.factory.tracker[chunk_key] <= self.threshold: # Check if chunk is cached
+			if self.protocol.factory.tracker[self.dimension][chunk_key] <= self.threshold: # Check if chunk is cached
 				return # Ignore uncached changes
 
 			# Unpack cached sections
@@ -81,9 +91,9 @@ class ChunkCacher(Module):
 			self.set_tile_entities(chunk_key, tile_entities)
 			return
 
-		if self.protocol.factory.tracker[chunk_key] < self.threshold:
+		if self.protocol.factory.tracker[self.dimension][chunk_key] < self.threshold:
 			# Chunk hasn't been pulled enough to warrant caching
-			self.protocol.factory.tracker[chunk_key] += 1
+			self.protocol.factory.tracker[self.dimension][chunk_key] += 1
 			return
 
 		data = buff.read() # Get rest of chunk data
@@ -99,10 +109,10 @@ class ChunkCacher(Module):
 
 		# A chunk with a tracker value > self.threshold will recieve chunk updates
 		# This should be allowed since the data is cached
-		self.protocol.factory.tracker[chunk_key] += 1
+		self.protocol.factory.tracker[self.dimension][chunk_key] += 1
 
 		# Tell the other protocol
-		self.protocol.other_factory.instance.send_packet("toggle_chunk", b"".join((self.protocol.buff_class.pack_varint(self.dimension), chunk_key)))
+		self.protocol.other_factory.send_packet("toggle_chunk", self.protocol.buff_class.pack_varint(self.dimension), chunk_key)
 
 	def packet_send_block_change(self, buff):
 		"""
@@ -117,7 +127,7 @@ class ChunkCacher(Module):
 		cz, bz = divmod(z, 16)
 
 		chunk_key = self.protocol.buff_class.pack("ii", cx, cz) # Get chunk key
-		if self.protocol.factory.tracker[chunk_key] > self.threshold: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
+		if self.protocol.factory.tracker[self.dimension][chunk_key] > self.threshold: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
 			# Chunk is cached, update
 
 			# Unpack rest of data
@@ -154,7 +164,7 @@ class ChunkCacher(Module):
 
 		# Call set_blocks for each chunk section
 		for key, values in records.items():
-			if self.protocol.factory.tracker[key] > self.threshold: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
+			if self.protocol.factory.tracker[self.dimension][key] > self.threshold: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
 				# Chunk is cached, update
 				self.set_blocks(key, *values)
 
@@ -167,7 +177,7 @@ class ChunkCacher(Module):
 		chunk_x, chunk_z  = buff.unpack("ii") # Use the chunk x and z values in bytes as the key
 		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
 
-		if self.protocol.factory.tracker[chunk_key] > self.threshold: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
+		if self.protocol.factory.tracker[self.dimension][chunk_key] > self.threshold: # Check if chunk is cached (not equal to since when the threshold is equal to stored amount the chunk is actually cached)
 			# Chunk is cached, update
 
 			# Unpack rest of data
@@ -195,7 +205,7 @@ class ChunkCacher(Module):
 		chunk_key = self.protocol.buff_class("ii", x // 16, z // 16) # Get chunk key
 
 		# Check if the chunk is cached
-		if self.protocol.factory.tracker[chunk_key] > self.threshold:
+		if self.protocol.factory.tracker[self.dimension][chunk_key] > self.threshold:
 			# Get tile entities
 			tile_entities = self.get_tile_entities(chunk_key)
 			if not tile_entities:
@@ -356,5 +366,5 @@ class ChunkCacher(Module):
 		"""
 		Call when chunk data is missing from the database
 		"""
-		del self.protocol.factory.tracker[key] # Reset the counter since the chunk is no longer cached
-		self.protocol.other_factory.send_packet("toggle_chunk", b"".join((self.protocol.buff_class.pack_varint(self.dimension), key))) # Tell the other protocol that it is no longer cached
+		del self.protocol.factory.tracker[self.dimension][key] # Reset the counter since the chunk is no longer cached
+		self.protocol.other_factory.instance.send_packet("toggle_chunk", self.protocol.buff_class.pack_varint(self.dimension), key)

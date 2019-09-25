@@ -58,3 +58,7 @@ class Cache(object):
 		self.__regcall()
 
 		return t
+
+	def get_all_identifiers(self):
+		self.cursor.execute("SELECT identifier FROM elements")
+		return self.cursor.fetchall()
