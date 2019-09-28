@@ -5,6 +5,7 @@ from collections import defaultdict
 
 from eastwood.bincache import Cache
 from eastwood.modules import Module
+from eastwood.plasma import ParallelCompressionInterface
 
 class ChunkCacher(Module):
 	"""
@@ -21,6 +22,8 @@ class ChunkCacher(Module):
 		super().__init__(protocol)
 		self.threshold = self.protocol.config["chunk_caching"]["threshold"]
 		self.dimension = 0 # Player dimension, used for tracking chunks
+
+		self.plasma = ParallelCompressionInterface()
 
 		if not hasattr(self.protocol.factory, "caches"):
 			# Generate path extensions
@@ -125,7 +128,7 @@ class ChunkCacher(Module):
 
 		# Cache it
 		# The cache stores the everything in the chunk data packet after the full chunk bool
-		self.protocol.factory.caches[self.dimension].insert(chunk_key, data)
+		self.set_cached_chunk(chunk_key, data, insert=True)
 
 		# A chunk with a tracker value > self.threshold will recieve chunk updates
 		# This should be allowed since the data is cached
@@ -249,6 +252,33 @@ class ChunkCacher(Module):
 			# Apply update
 			self.set_tile_entities(chunk_key, tile_entities)
 
+	def get_cached_chunk(self, chunk_key):
+		"""
+		Grabs chunk data from the cache and uncompresses it
+		Args:
+			chunk_key: identifier in cache
+		"""
+		cached_data = self.protocol.factory.caches[self.dimension].get(chunk_key)
+		if not cached_data:
+			self.handle_missing_data(chunk_key)
+			return None
+
+		# Uncompress and return
+		return self.protocol.buff_class(self.plasma.decompress(cached_data))
+
+	def set_cached_chunk(self, chunk_key, data, insert=False):
+		"""
+		Compresses data and sets it in the cache
+		Args:
+			chunk_key: identifier in cache
+			data: bytes object
+			insert: whether to insert or update, only use insert if you are adding new data
+		"""
+		func = self.protocol.factory.caches[self.dimension].insert if insert else self.protocol.factory.caches[self.dimension].update
+
+		# Compress and set!
+		func(chunk_key, self.plasma.compress(data))
+
 	def set_blocks(self, key, *blocks):
 		"""
 		Sets blocks in a cached chunk
@@ -277,11 +307,10 @@ class ChunkCacher(Module):
 			sections: list of BlockArray chunk sections
 			biomes: list of biome data
 		"""
-		cached_data = self.protocol.factory.caches[self.dimension].get(key)
-		if not cached_data:
+		column = self.get_cached_chunk(key)
+		if not column:
 			return (None, None)
 
-		column = self.protocol.buff_class(cached_data)
 		prim_bit_mask = column.unpack_varint()
 		column.unpack_nbt() # Ignore heightmap
 
@@ -295,7 +324,9 @@ class ChunkCacher(Module):
 			sections: list of BlockArray chunk sections
 			biomes: list of biome data
 		"""
-		column = self.protocol.buff_class(self.protocol.factory.caches[self.dimension].get(key))
+		column = self.get_cached_chunk(key)
+		if not column:
+			return
 
 		# Unpack existing data, most will be reused
 		column.unpack_varint() # Old bitmask won't be used
@@ -310,7 +341,7 @@ class ChunkCacher(Module):
 							tile_entity_data))
 
 		# Save new data
-		self.protocol.factory.caches[self.dimension].update(key, cached_data)
+		self.set_cached_chunk(key, cached_data)
 
 	def generate_cached_chunk_packet(self, key):
 		"""
@@ -318,12 +349,11 @@ class ChunkCacher(Module):
 		Args:
 			key: chunk x and z
 		"""
-		cached_data = self.protocol.factory.caches[self.dimension].get(key)
+		cached_data = self.get_cached_chunk(key)
 		if not cached_data:
-			self.handle_missing_data(key)
 			return None
 
-		return b"".join((key, self.protocol.buff_class.pack("?", True), cached_data))
+		return b"".join((key, self.protocol.buff_class.pack("?", True), cached_data.buff))
 
 	def get_tile_entities(self, key):
 		"""
@@ -334,7 +364,7 @@ class ChunkCacher(Module):
 			dict: tile entities as nbt tags, or None if chunk is no longer cached
 		"""
 		# Get cached chunk
-		cached_data = self.protocol.factory.caches[self.dimension].get(key)
+		cached_data = self.get_cached_chunk(key)
 		if not cached_data:
 			return None
 
@@ -363,7 +393,9 @@ class ChunkCacher(Module):
 			key: chunk key
 			tile_entities: tile entities as nbt tags
 		"""
-		column = self.protocol.buff_class(self.protocol.factory.caches[self.dimension].get(key))
+		column = self.get_cached_chunk(key)
+		if not column:
+			return
 
 		# Get other chunk data
 		prim_bit_mask = column.unpack_varint()
@@ -380,7 +412,7 @@ class ChunkCacher(Module):
 							*[self.protocol.buff_class.pack_nbt(e) for e in tile_entities.values()]))
 
 		# Save new data
-		self.protocol.factory.caches[self.dimension].update(key, cached_data)
+		self.set_cached_chunk(key, cached_data)
 
 	def handle_missing_data(self, key):
 		"""
