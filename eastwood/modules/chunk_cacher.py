@@ -76,6 +76,12 @@ class ChunkCacher(Module):
 			if self.protocol.factory.tracker[self.dimension][chunk_key] <= self.threshold: # Check if chunk is cached
 				return # Ignore uncached changes
 
+			# Chunk bitmask
+			prim_bit_mask = buff.unpack_varint()
+
+			# TODO: Actually care about this
+			buff.unpack_nbt() # Ignore heightmap data
+
 			# Unpack cached sections
 			sections, biomes = self.get_chunk_sections(chunk_key) # Get chunk
 			if not sections or not biomes:
@@ -84,11 +90,11 @@ class ChunkCacher(Module):
 				return
 
 			# Unpack changed sections
-			changed_sections, _ = buff.unpack_chunk(buff.unpack_varint()) # Varint is the bitmask
+			changed_sections, _ = buff.unpack_chunk(prim_bit_mask, full_chunk, self.dimension == 0) # Varint is the bitmask
 
 			# Apply new sections if they are not empty
 			for i, new_section in enumerate(changed_sections):
-				if not new_section.is_empty():
+				if new_section:
 					sections[i] = new_section
 
 			# Update cache
@@ -257,7 +263,7 @@ class ChunkCacher(Module):
 			return
 
 		for change in blocks:
-			sections[change[0]][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
+			sections[change[0]][0][change[2]*256 + change[3]*16 + change[1]] = change[4] # Set block id
 
 		# Save chunk section
 		self.set_chunk_sections(key, sections, biomes)
