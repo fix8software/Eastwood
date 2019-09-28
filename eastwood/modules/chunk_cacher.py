@@ -2,6 +2,8 @@
 Chunk caching system to reduce the netusage of the most expensive packet to send (chunk data packets)
 """
 from collections import defaultdict
+from mmh3 import hash128
+from twisted.internet import reactor
 
 from eastwood.bincache import Cache
 from eastwood.modules import Module
@@ -16,8 +18,6 @@ class ChunkCacher(Module):
 	# Note for future contributers:
 	# There is some outdated examples posted by the quarry dev that may help you get a wrap around this
 	# https://github.com/barneygale/minebnc/blob/master/plugins/world.py
-	loaded_cache = False
-
 	def __init__(self, protocol):
 		super().__init__(protocol)
 		self.threshold = self.protocol.config["chunk_caching"]["threshold"]
@@ -36,13 +36,21 @@ class ChunkCacher(Module):
 			self.protocol.factory.caches = {-1: Cache(path=path0), 0: Cache(path=path1), 1: Cache(path=path2)} # Bincache for each dimension (-1=Nether, 0=Overworld, 1=End)
 		if not hasattr(self.protocol.factory, "tracker"):
 			self.protocol.factory.tracker = {-1: defaultdict(int), 0: defaultdict(int), 1: defaultdict(int)} # Dictionary to keep track of the amount of times chunks has been pulled
+		if not hasattr(self.protocol.factory, "loaded_cache"):
+			self.protocol.factory.loaded_cache = False
+		if not hasattr(self.protocol.factory, "processed_packets"):
+			self.protocol.factory.processed_packets = {-1: [], 0: [], 1: []} # Hashes for processed packets to prevent duplicate processing
+
+			# Set timer to clear processed packets, this should be only called once
+			# It is set to be called after 2x the buffer_wait
+			reactor.callLater(self.protocol.config["global"]["buffer_ms"]/500, self.clear_processed_packets)
 
 	def connectionMade(self):
 		"""
 		Loads cached chunks into the tracker
 		Also sends over toggle_chunk packets for already cached chunks
 		"""
-		if self.loaded_cache: # Should only be called once
+		if self.protocol.factory.loaded_cache: # Should only be called once
 			return
 
 		for i in self.protocol.factory.caches.keys():
@@ -50,7 +58,7 @@ class ChunkCacher(Module):
 				self.protocol.factory.tracker[i][ident] = self.threshold + 1 # Set tracker to read from it
 				self.protocol.other_factory.instance.send_packet("toggle_chunk", self.protocol.buff_class.pack_varint(i), ident) # Send toggle_chunk
 
-		self.loaded_cache = True
+		self.protocol.factory.loaded_cache = True
 
 	def packet_send_join_game(self, buff):
 		"""
@@ -75,6 +83,9 @@ class ChunkCacher(Module):
 		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
 
 		if not full_chunk:
+			if self.is_duplicate(buff.buff): # ignore duplicate change packets only, full chunk packets are exempt
+				return
+
 			# Non full chunks act as a large multiblockchange
 			if self.protocol.factory.tracker[self.dimension][chunk_key] <= self.threshold: # Check if chunk is cached
 				return # Ignore uncached changes
@@ -141,6 +152,9 @@ class ChunkCacher(Module):
 		"""
 		Called when there is a single block change
 		"""
+		if self.is_duplicate(buff.buff):
+			return # Ignore duplicates
+
 		# Unpack enough to check if data is cached or not
 		x, y, z = buff.unpack_position()
 
@@ -161,6 +175,10 @@ class ChunkCacher(Module):
 		"""
 		Called when there is an explosion
 		"""
+		# Explosion packets are unique since they also contain player data. We don't want that as we only care about the block changes
+		if self.is_duplicate(buff.buff[:len(buff.buff)-32*3]):
+			return # Ignore duplicates
+
 		# Unpack explosion point
 		x, y, z, _ = buff.unpack("ffff")
 
@@ -197,6 +215,9 @@ class ChunkCacher(Module):
 		"""
 		Called when there is a multi block change
 		"""
+		if self.is_duplicate(buff.buff):
+			return # Ignore duplicates
+
 		chunk_x, chunk_z  = buff.unpack("ii") # Use the chunk x and z values in bytes as the key
 		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
 
@@ -223,6 +244,9 @@ class ChunkCacher(Module):
 		"""
 		Updates a tile entity, could be add modify or remove
 		"""
+		if self.is_duplicate(buff.buff):
+			return # Ignore duplicates
+
 		# Get enough info for the chunk key
 		x, y, z = buff.unpack_position()
 		chunk_key = self.protocol.buff_class("ii", x // 16, z // 16) # Get chunk key
@@ -251,6 +275,29 @@ class ChunkCacher(Module):
 
 			# Apply update
 			self.set_tile_entities(chunk_key, tile_entities)
+
+	def is_duplicate(self, data):
+		"""
+		Checks whether data has already been processed
+		Args:
+			data: packet data to hash and compare with
+		Returns:
+			bool: whether data is duplicated or not
+		"""
+		comp_hash = hash128(data) # Hash and check the list
+		res = comp_hash in self.protocol.factory.processed_packets[self.dimension]
+
+		if not res: # Add to the list if this is unique
+			self.protocol.factory.processed_packets[self.dimension].append(res)
+
+		return res
+
+	def clear_processed_packets(self):
+		"""
+		Clears the hashes in processed_packets
+		"""
+		for l in self.protocol.factory.processed_packets.values():
+			l.clear()
 
 	def get_cached_chunk(self, chunk_key):
 		"""
