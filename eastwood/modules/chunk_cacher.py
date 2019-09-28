@@ -25,6 +25,7 @@ class ChunkCacher(Module):
 
 		self.plasma = ParallelCompressionInterface()
 
+		# Factory variables that we set in this module's init
 		if not hasattr(self.protocol.factory, "caches"):
 			# Generate path extensions
 			path0 = path1 = path2 = self.protocol.config["chunk_caching"]["path"]
@@ -44,6 +45,10 @@ class ChunkCacher(Module):
 			# Set timer to clear processed packets, this should be only called once
 			# It is set to be called after 2x the buffer_wait
 			reactor.callLater(self.protocol.config["global"]["buffer_ms"]/500, self.clear_processed_packets)
+		if not hasattr(self.protocol.factory, "last_grabbed_key"):
+			self.protocol.factory.last_grabbed_key = None
+		if not hasattr(self.protocol.factory, "last_grabbed_value"):
+			self.protocol.factory.last_grabbed_value = None
 
 	def connectionMade(self):
 		"""
@@ -305,13 +310,21 @@ class ChunkCacher(Module):
 		Args:
 			chunk_key: identifier in cache
 		"""
-		cached_data = self.protocol.factory.caches[self.dimension].get(chunk_key)
-		if not cached_data:
-			self.handle_missing_data(chunk_key)
-			return None
+		data = self.protocol.factory.last_grabbed_value
+		if chunk_key != self.protocol.factory.last_grabbed_key: # Use the last grabbed value if possible
+			# Grab a new chunk
+			self.protocol.factory.last_grabbed_key = chunk_key
 
-		# Uncompress and return
-		return self.protocol.buff_class(self.plasma.decompress(cached_data))
+			cached_data = self.protocol.factory.caches[self.dimension].get(chunk_key)
+			if not cached_data:
+				self.handle_missing_data(chunk_key)
+				return None
+
+			# Uncompress
+			data = self.protocol.factory.last_grabbed_value = self.plasma.decompress(cached_data)
+
+		# Return
+		return self.protocol.buff_class(data)
 
 	def set_cached_chunk(self, chunk_key, data, insert=False):
 		"""
@@ -321,9 +334,12 @@ class ChunkCacher(Module):
 			data: bytes object
 			insert: whether to insert or update, only use insert if you are adding new data
 		"""
-		func = self.protocol.factory.caches[self.dimension].insert if insert else self.protocol.factory.caches[self.dimension].update
+		# update last set value
+		self.protocol.factory.last_grabbed_key = chunk_key
+		self.protocol.factory.last_grabbed_value = data
 
 		# Compress and set!
+		func = self.protocol.factory.caches[self.dimension].insert if insert else self.protocol.factory.caches[self.dimension].update
 		func(chunk_key, self.plasma.compress(data))
 
 	def set_blocks(self, key, *blocks):
