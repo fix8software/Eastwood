@@ -15,6 +15,8 @@ class ChunkCacher(Module):
 	# Note for future contributers:
 	# There is some outdated examples posted by the quarry dev that may help you get a wrap around this
 	# https://github.com/barneygale/minebnc/blob/master/plugins/world.py
+	loaded_cache = False
+
 	def __init__(self, protocol):
 		super().__init__(protocol)
 		self.threshold = self.protocol.config["chunk_caching"]["threshold"]
@@ -37,10 +39,15 @@ class ChunkCacher(Module):
 		Loads cached chunks into the tracker
 		Also sends over toggle_chunk packets for already cached chunks
 		"""
+		if self.loaded_cache: # Should only be called once
+			return
+
 		for i in self.protocol.factory.caches.keys():
 			for ident in self.protocol.factory.caches[i].get_all_identifiers():
 				self.protocol.factory.tracker[i][ident] = self.threshold + 1 # Set tracker to read from it
 				self.protocol.other_factory.instance.send_packet("toggle_chunk", self.protocol.buff_class.pack_varint(i), ident) # Send toggle_chunk
+
+		self.loaded_cache = True
 
 	def packet_send_join_game(self, buff):
 		"""
@@ -77,7 +84,7 @@ class ChunkCacher(Module):
 				return
 
 			# Unpack changed sections
-			changed_sections = buff.unpack_chunk(buff.unpack_varint()) # Varint is the bitmask
+			changed_sections, _ = buff.unpack_chunk(buff.unpack_varint()) # Varint is the bitmask
 
 			# Apply new sections if they are not empty
 			for i, new_section in enumerate(changed_sections):
