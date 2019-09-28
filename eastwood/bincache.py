@@ -61,4 +61,4 @@ class Cache(object):
 
 	def get_all_identifiers(self):
 		self.cursor.execute("SELECT identifier FROM elements")
-		return self.cursor.fetchall()
+		return [x[0] for x in self.cursor.fetchall()]
