@@ -59,11 +59,12 @@ class _ZStandardParallelCompressionInterface(object):
 		self.__global_level = self.__MAX_LEVEL
 		
 		self.__create_zstandard_D()
-		self.__create_level_table()
 		
-	def __create_level_table(self):
+		self.create_level_table()
+		
+	def create_level_table(self, size = 16384):
 		self.__table = {}
-		self.__table_size = 16384
+		self.__table_size = size
 		
 		crand = ThreadedModPseudoRandRestrictedRand()
 		data = [
@@ -90,13 +91,15 @@ class _ZStandardParallelCompressionInterface(object):
 			timebyte = (a / self.__table_size)
 		
 			self.__table[level] = (timebyte)
+			
+		return self.__table
 		
 	def __create_zstandard_D(self):
 		self.decompressionObject = zstd.ZstdDecompressor()
 		
 	def compress(self, input: bytes, level: int = -1):
 		if level < self.__MIN_LEVEL:
-			accept_level = 0
+			accept_level = self.__MIN_LEVEL
 			for k, v in self.__table.items():
 				if ((v * len(input)) * 1000) < self.__target_speed + self.__target_buf:
 					accept_level = k

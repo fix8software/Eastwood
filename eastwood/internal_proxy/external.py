@@ -79,7 +79,7 @@ class InternalProxyExternalModule(Module):
 		chunk_key = self.protocol.buff_class.pack("ii", chunk_x, chunk_z)
 
 		if not full_chunk:
-			return # Ignore full chunks
+			return # Ignore non full chunks
 
 		if chunk_key in self.protocol.factory.cache_lists[self.dimension]:
 			# Send stripped chunk packet if cached

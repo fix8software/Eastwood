@@ -5,6 +5,7 @@ from multiprocessing import set_start_method
 from twisted.internet import reactor
 from twisted.python import log
 from pathlib import Path
+from sys import platform
 
 def main():
 	try:
@@ -92,6 +93,14 @@ player_limit = 65535
 # Warning: This feature is experimental, and will most likely raise stupid
 # amounts of exceptions. You have been warned.
 enabled = false
+
+# Chunk data should be pulled x times before entering the cache
+threshold = 5
+
+# Set the path value to a filename to enable on-disk caching. The filename will
+# be postpended with the dimension and a .db filetype. Set to ":memory:" to use
+# in ram caching instead. In memory is recommended, however it isn't persistant.
+path = ":memory:"
 """.format(datetime.datetime.now(), secrets.token_urlsafe(25), secrets.token_urlsafe(25), 'Eastwood'))
 		print('Config file generated at '+config_location+', please modify it.')
 		return
@@ -105,7 +114,8 @@ enabled = false
 	logging.getLogger().setLevel((lambda x: logging.WARN if False else logging.INFO)(config['global']['debug']))
 
 	# Be sure processes are forked, not spawned
-	set_start_method("fork")
+	if platform == "linux" or platform == "linux2" or platform == "darwin":
+		set_start_method("fork")
 
 	# Start proxies
 	if config['global']['type'] in ("internal", "both"):
