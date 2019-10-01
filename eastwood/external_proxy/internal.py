@@ -30,7 +30,10 @@ class ExternalProxyInternalModule(Module):
 		Allow client with packed uuid to send packets
 		"""
 		uuid = buff.unpack_uuid()
-		client = self.protocol.other_factory.get_client(uuid)
+		try:
+			client = self.protocol.other_factory.get_client(uuid)
+		except KeyError:
+			return # Client disconnected before we could release the queue
 
 		# Add queued packets to buffer
 		for packet_uuid, packet_name, packet_data in client.queue:
