@@ -123,9 +123,9 @@ class ChunkCacher(Module):
 			tile_entities = {}
 			for _ in range(buff.unpack_varint()): # Loop through every tile entity
 				tile_entity = buff.unpack_nbt()
-				te_obj = tile_entity.te_obj()[""]
+				te_obj = tile_entity.to_obj()[""]
 
-				tile_entities[(te_obj["x"], te_obj["y"], te_obj["z"])] = tile_entities
+				tile_entities[(te_obj["x"], te_obj["y"], te_obj["z"])] = tile_entity
 
 			self.set_tile_entities(chunk_key, tile_entities)
 			return
@@ -254,7 +254,7 @@ class ChunkCacher(Module):
 
 		# Get enough info for the chunk key
 		x, y, z = buff.unpack_position()
-		chunk_key = self.protocol.buff_class("ii", x // 16, z // 16) # Get chunk key
+		chunk_key = self.protocol.buff_class.pack("ii", x // 16, z // 16) # Get chunk key
 
 		# Check if the chunk is cached
 		if self.protocol.factory.tracker[self.dimension][chunk_key] > self.threshold:
@@ -429,14 +429,11 @@ class ChunkCacher(Module):
 			dict: tile entities as nbt tags, or None if chunk is no longer cached
 		"""
 		# Get cached chunk
-		cached_data = self.get_cached_chunk(key)
-		if not cached_data:
+		chunk = self.get_cached_chunk(key)
+		if not chunk:
 			return None
 
-		chunk = self.protocol.buff_class(cached_data)
-
 		# Read through all the unimportant stuff
-		chunk.unpack("ii?")
 		chunk.unpack_varint()
 		chunk.unpack_nbt()
 		chunk.read(chunk.unpack_varint())
@@ -445,9 +442,9 @@ class ChunkCacher(Module):
 		tile_entities = {}
 		for _ in range(chunk.unpack_varint()): # Loop through every tile entity
 			tile_entity = chunk.unpack_nbt()
-			te_obj = tile_entity.te_obj()[""]
+			te_obj = tile_entity.to_obj()[""]
 
-			tile_entities[(te_obj["x"], te_obj["y"], te_obj["z"])] = tile_entities
+			tile_entities[(te_obj["x"], te_obj["y"], te_obj["z"])] = tile_entity
 
 		return tile_entities
 
