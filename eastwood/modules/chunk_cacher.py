@@ -293,7 +293,7 @@ class ChunkCacher(Module):
 		res = comp_hash in self.protocol.factory.processed_packets[self.dimension]
 
 		if not res: # Add to the list if this is unique
-			self.protocol.factory.processed_packets[self.dimension].append(res)
+			self.protocol.factory.processed_packets[self.dimension].append(comp_hash)
 
 		return res
 
@@ -301,6 +301,8 @@ class ChunkCacher(Module):
 		"""
 		Clears the hashes in processed_packets
 		"""
+		reactor.callLater(self.protocol.config["global"]["buffer_ms"]/500, self.clear_processed_packets) # Recall
+
 		for l in self.protocol.factory.processed_packets.values():
 			l.clear()
 
