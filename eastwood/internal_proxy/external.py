@@ -1,3 +1,4 @@
+from mmh3 import hash128
 from twisted.internet import reactor
 from twisted.internet.protocol import ClientFactory
 from quarry.types.uuid import UUID
@@ -81,9 +82,45 @@ class InternalProxyExternalModule(Module):
 		if not full_chunk:
 			return # Ignore non full chunks
 
+		# Send stripped chunk packet if cached
 		if chunk_key in self.protocol.factory.cache_lists[self.dimension]:
-			# Send stripped chunk packet if cached
-			return ("chunk_data", self.protocol.buff_class(b"".join((chunk_key, self.protocol.buff_class.pack("?", True)))))
+			# Unpack data
+			prim_bit_mask = buff.unpack_varint()
+			heightmap = buff.unpack_nbt() # Ignore heightmap data
+			sections, biomes = buff.unpack_chunk(prim_bit_mask, True, self.dimension == 0)
+			tile_entities = buff.read()
+
+			# Calculate hash for chunk sections
+			hashes = []
+			for section in sections:
+				hashes.append(hash128(self.protocol.buff_class.pack_chunk_section(*section)))
+
+			# Calculate hashes for tile entities
+			hashes.append(hash128(tile_entities))
+
+			# Send if they are the same
+			if hashes == self.protocol.factory.cache_lists[self.dimension][self.chunk_key]:
+				return ("chunk_data", self.protocol.buff_class(b"".join((chunk_key, self.protocol.buff_class.pack("?", full_chunk)))))
+
+			# Chunks are different!
+			# Drop every section that is the same with the cached chunk
+			for i in range(17):
+				if hashes[i] == self.protocol.factory.cache_lists[self.dimension][self.chunk_key][i]:
+					# Wipe from sections
+					try:
+						sections[i] = (None, None, None)
+					except KeyError:
+						# Meant to drop tileentities
+						tile_entities = None
+
+			# Send chunk data packet with only changes
+			return ("chunk_data", self.protocol.buff_class(b"".join((chunk_key,
+																	self.protocol.buff_class.pack("?", True),
+																	self.protocol.buff_class.pack_chunk_bitmask(sections),
+																	self.protocol.buff_class.pack_nbt(heightmap),
+																	self.protocol.buff_class.pack_chunk(sections, biomes),
+																	tile_entities if tile_entities else b"",
+																	))))
 
 class InternalProxyExternalProtocol(MCProtocol):
 	"""
