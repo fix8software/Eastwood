@@ -1,5 +1,5 @@
 import logging
-import toml, datetime, secrets, sys
+import toml, datetime, secrets, sys, os
 from eastwood import external_proxy, internal_proxy
 from multiprocessing import set_start_method
 from twisted.internet import reactor
@@ -10,6 +10,8 @@ from sys import platform
 def main():
 	try:
 		config_location = sys.argv[1]
+		if not os.path.isfile(sys.argv[1]):
+			config_location = 'config.toml'
 	except IndexError:
 		config_location = 'config.toml'
 

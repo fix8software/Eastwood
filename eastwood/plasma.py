@@ -14,7 +14,7 @@ from threading import Thread
 from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
-import zlib, time, os, hashlib, random, math, copy
+import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -24,6 +24,11 @@ __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSalt
 SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
+
+try:
+	DEBUG = (lambda x: True if x == 'DEBUG' else False)(sys.argv[1])
+except IndexError:
+	DEBUG = False
 
 class ThreadMappedObject(object):
 	__POOL_TYPE = 'multiprocessing'
@@ -42,6 +47,147 @@ class ThreadMappedObject(object):
 		cls.θ = cls.__THREAD_COUNT
 		
 		return object.__new__(cls)
+
+class _BZip2ParallelCompressionInterface(ThreadMappedObject):
+	# bzip2 attributes
+	__MAX_LEVEL = 9
+	__MIN_LEVEL = 1
+	
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 60, target_speed_buf: int = 5):
+		self.nodes = nodes
+		self.__target_speed = target_speed_ms
+		self.__target_buf = target_speed_buf
+		self.__average_time = deque([0], maxlen=255)
+		self.__table = {}
+		
+		self.last_level = self.__MAX_LEVEL
+		self.__global_level = self.__MAX_LEVEL
+		
+		self.create_level_table()
+
+	def create_level_table(self, size = 262144):
+		self.__table = {}
+		self.__table_size = size
+		
+		crand = ThreadedModPseudoRandRestrictedRand()
+		data = [
+			token_bytes(self.__table_size),
+			os.urandom(self.__table_size),
+			crand.random(self.__table_size),
+			os.urandom(1) + b'\x00' * self.__table_size
+		]
+		
+		for x in data:
+			# This, for some reason, helps get a better result on
+			# the first level during the real task. ¯\_(ツ)_/¯
+			__ = self.compress(x, self.__MIN_LEVEL)
+		
+		for level in range(self.__MIN_LEVEL, self.__MAX_LEVEL + 1):
+			times = []
+			for x in data:
+				for _ in range(2):
+					s = time.time()
+					__ = self.compress(x, level)
+					t = time.time() - s
+					times.append(t)
+			a = sum(times) / len(times)
+			timebyte = (a / self.__table_size)
+		
+			self.__table[level] = (timebyte)
+			
+		return self.__table
+		
+	@functools.lru_cache(maxsize=4)
+	def compress(self, input: bytes, level: int = -1):
+		if level < self.__MIN_LEVEL:
+			accept_level = self.__MIN_LEVEL
+			for k, v in self.__table.items():
+				if ((v * len(input)) * 1000) < self.__target_speed + self.__target_buf:
+					accept_level = k
+		
+			flevel = int(round((self.__global_level + accept_level) / 2))
+		else:
+			flevel = level
+	
+		startt = time.time()
+		result = self.__p_compress(input, flevel)
+		
+		if level < self.__MIN_LEVEL:
+			msec = ((time.time() - startt) * 1000)
+			
+			if DEBUG:
+				print('[DEBUG] Compression Time: {0}ms'.format(msec))
+			
+			self.__average_time.append(((sum(self.__average_time) / len(self.__average_time)) + msec) / 2)
+
+			averaged = self.__average_time[-1]
+			
+			if averaged > self.__target_speed and self.__global_level > self.__MIN_LEVEL:
+				self.__global_level -= 1
+			elif averaged < self.__target_speed - self.__target_buf and self.__global_level < self.__MAX_LEVEL:
+				self.__global_level += 1
+		
+		self.last_level = flevel
+		
+		if len(result) > len(input):
+			meta = self.__int_in(0b00000000)
+			result = input
+		else:
+			meta = self.__int_in(0b00000001)
+			
+		return meta + result
+		
+	def __p_compress(self, input: bytes, level: int) -> bytes:
+		x = self.__chunks(input, 98304 * level)
+		
+		self.cu_lev = level
+		return b''.join(self.Σ(self.__encapsulated_compression, list(x)))
+		
+	def __encapsulated_compression(self, raw: bytes) -> bytes:
+		capsule = bz2.compress(raw, self.cu_lev)
+
+		return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
+		
+	@functools.lru_cache(maxsize=4)
+	def decompress(self, input: bytes) -> bytes:
+		"""
+		Main decompression function.
+		Args:
+			input: Bytes to decompress - Note this is not compatible with the output of the standard compression function.
+		"""
+
+		startt = time.time()
+		if self.__int_out(input[:META_BYTES]) == 0b00000000:
+			return input[META_BYTES:]
+		else:
+			input = input[META_BYTES:]
+
+		chunks = []
+		while len(input) > 0:
+			chunk_length = int.from_bytes(input[:SIZE_BYTES], byteorder=BYTE_ORDER)
+			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
+			input = input[SIZE_BYTES+chunk_length:]
+			
+		result = b''.join(self.Σ(bz2.decompress, chunks))
+		msec = ((time.time() - startt) * 1000)
+		
+		if DEBUG:
+			print('[DEBUG] Decompression Time: {0}ms'.format(msec))
+				
+		return result
+		
+	@staticmethod
+	def __chunks(l, n):
+		for i in range(0, len(l), n):
+			yield l[i:i+n]
+			
+	@staticmethod
+	def __int_in(i: int, s: int = META_BYTES):
+		return i.to_bytes(s, byteorder=BYTE_ORDER)
+
+	@staticmethod
+	def __int_out(i: bytes):
+		return int.from_bytes(i, byteorder=BYTE_ORDER)
 
 class _ZStandardParallelCompressionInterface(object):
 	# zstd attributes
@@ -290,7 +436,7 @@ class ParallelCompressionInterface(ThreadMappedObject):
 	def __internal_decompression(self, input: bytes) -> bytes:
 		return self.__decompress(input)
 
-ParallelCompressionInterface = _ZStandardParallelCompressionInterface
+ParallelCompressionInterface = _BZip2ParallelCompressionInterface
 
 class _SingleThreadedAESCipher(ThreadMappedObject):
 	__IV_SIZE = 12
