@@ -14,7 +14,7 @@ from threading import Thread
 from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
-import zlib, time, os, hashlib, random, math, copy, bz2, functools
+import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -24,6 +24,11 @@ __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSalt
 SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
+
+try:
+	DEBUG = (lambda x: True if x == 'DEBUG' else False)(sys.argv[1])
+except IndexError:
+	DEBUG = False
 
 class ThreadMappedObject(object):
 	__POOL_TYPE = 'multiprocessing'
@@ -109,6 +114,10 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 		
 		if level < self.__MIN_LEVEL:
 			msec = ((time.time() - startt) * 1000)
+			
+			if DEBUG:
+				print('[DEBUG] Compression Time: {0}ms'.format(msec))
+			
 			self.__average_time.append(((sum(self.__average_time) / len(self.__average_time)) + msec) / 2)
 
 			averaged = self.__average_time[-1]
