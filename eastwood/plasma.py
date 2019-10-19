@@ -48,11 +48,11 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 	__MAX_LEVEL = 9
 	__MIN_LEVEL = 1
 	
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 50, target_speed_buf: int = 10):
+	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 60, target_speed_buf: int = 5):
 		self.nodes = nodes
 		self.__target_speed = target_speed_ms
 		self.__target_buf = target_speed_buf
-		self.__average_time = deque([0], maxlen=8192)
+		self.__average_time = deque([0], maxlen=255)
 		self.__table = {}
 		
 		self.last_level = self.__MAX_LEVEL
@@ -60,7 +60,7 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 		
 		self.create_level_table()
 
-	def create_level_table(self, size = 16384):
+	def create_level_table(self, size = 262144):
 		self.__table = {}
 		self.__table_size = size
 		
@@ -92,7 +92,7 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 			
 		return self.__table
 		
-	@functools.lru_cache(maxsize=255)
+	@functools.lru_cache(maxsize=4)
 	def compress(self, input: bytes, level: int = -1):
 		if level < self.__MIN_LEVEL:
 			accept_level = self.__MIN_LEVEL
@@ -105,7 +105,7 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 			flevel = level
 	
 		startt = time.time()
-		y = self.__p_compress(input, flevel)
+		result = self.__p_compress(input, flevel)
 		
 		if level < self.__MIN_LEVEL:
 			msec = ((time.time() - startt) * 1000)
@@ -119,7 +119,14 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 				self.__global_level += 1
 		
 		self.last_level = flevel
-		return y
+		
+		if len(result) > len(input):
+			meta = self.__int_in(0b00000000)
+			result = input
+		else:
+			meta = self.__int_in(0b00000001)
+			
+		return meta + result
 		
 	def __p_compress(self, input: bytes, level: int) -> bytes:
 		x = self.__chunks(input, 98304 * level)
@@ -132,7 +139,7 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 
 		return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 		
-	@functools.lru_cache(maxsize=255)
+	@functools.lru_cache(maxsize=4)
 	def decompress(self, input: bytes) -> bytes:
 		"""
 		Main decompression function.
@@ -140,10 +147,10 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 			input: Bytes to decompress - Note this is not compatible with the output of the standard compression function.
 		"""
 
-		#if self.__int_out(input[:META_BYTES]) == 0b00000000:
-		#	return input[META_BYTES:]
-		#else:
-		#	input = input[META_BYTES:]
+		if self.__int_out(input[:META_BYTES]) == 0b00000000:
+			return input[META_BYTES:]
+		else:
+			input = input[META_BYTES:]
 
 		chunks = []
 		while len(input) > 0:
