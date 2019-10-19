@@ -156,6 +156,7 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 			input: Bytes to decompress - Note this is not compatible with the output of the standard compression function.
 		"""
 
+		startt = time.time()
 		if self.__int_out(input[:META_BYTES]) == 0b00000000:
 			return input[META_BYTES:]
 		else:
@@ -167,7 +168,13 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 			
-		return b''.join(self.Σ(bz2.decompress, chunks))
+		result = b''.join(self.Σ(bz2.decompress, chunks))
+		msec = ((time.time() - startt) * 1000)
+		
+		if DEBUG:
+			print('[DEBUG] Decompression Time: {0}ms'.format(msec))
+				
+		return result
 		
 	@staticmethod
 	def __chunks(l, n):
