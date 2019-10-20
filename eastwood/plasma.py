@@ -107,7 +107,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 		self.__average_time = deque([0], maxlen=255)
 		self.__table = {}
 		
-		self.__engine = zlib
+		self.__engine = bz2
 		
 		self.__compression_cache = {}
 		self.__decompression_cache = {}
