@@ -24,3 +24,4 @@ toml==0.10.0
 pycryptodome==3.9.0
 mmh3==2.5.1
 multiprocess==0.70.9
+colorama==0.4.1

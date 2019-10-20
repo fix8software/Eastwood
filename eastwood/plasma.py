@@ -15,7 +15,7 @@ from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
 import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys
-import urllib.request, mmh3
+import urllib.request, mmh3, colorama
 from multiprocess import Pool as DillPool
 
 # These are the only classes that ought to be used with Plasma publicly.
@@ -33,6 +33,8 @@ try:
 	DEBUG = (lambda x: True if x == 'DEBUG' else False)(sys.argv[1])
 except IndexError:
 	DEBUG = False
+if DEBUG:
+	colorama.init()
 
 @functools.lru_cache(maxsize=32)
 def cachedStringHash(i: str) -> str:
@@ -182,7 +184,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 			msec = ((time.time() - startt) * 1000)
 			
 			if DEBUG:
-				print('[DEBUG] Compression Time: {0}ms, at level {1}'.format(msec, flevel))
+				print('[DEBUG] '+colorama.Fore.RED+colorama.Style.BRIGHT+'Compression'+colorama.Style.RESET_ALL+' Time: {0}ms at level {1} ({2} times smaller)'.format(str(round(msec, 1)).ljust(10), str(flevel).ljust(4), str(int(round(len(input) / len(result)))).ljust(8)))
 			
 			self.__average_time.append(((sum(self.__average_time) / len(self.__average_time)) + msec) / 2)
 
@@ -244,7 +246,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 		msec = ((time.time() - startt) * 1000)
 		
 		if DEBUG:
-			print('[DEBUG] Decompression Time: {0}ms'.format(msec))
+			print('[DEBUG] '+colorama.Fore.GREEN+colorama.Style.BRIGHT+'Decompress.'+colorama.Style.RESET_ALL+' Time: {0}ms'.format(str(round(msec, 1)).ljust(10)))
 				
 		if self.cached:
 			if len(self.__decompression_cache) >= self.__CACHE_SIZE:
