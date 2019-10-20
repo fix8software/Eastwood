@@ -96,7 +96,7 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 	__MIN_LEVEL  = 1
 	
 	# cache attributes
-	__CACHE_SIZE = 255
+	__CACHE_SIZE = 8
 	
 	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 60, target_speed_buf: int = 5):
 		self.nodes = nodes
