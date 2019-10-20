@@ -12,23 +12,20 @@ class InternalProxyInternalModule(Module):
 		super().__init__(protocol)
 
 		if not hasattr(self.protocol.other_factory, "cache_list"):
-			self.protocol.other_factory.cache_lists = {-1: {}, 0: {}, 1: {}} # List to keep track of cached data
+			self.protocol.other_factory.cache_lists = {-1: [], 0: [], 1: []} # List to keep track of cached data
 
 	def packet_recv_add_conn(self, buff):
 		# Add a connection to InternalProxyMCClientFactory
 		self.protocol.other_factory.add_connection(buff.unpack_uuid())
 
-	def packet_recv_update_chunk_hashes(self, buff):
+	def packet_recv_toggle_chunk(self, buff):
 		dimension = buff.unpack_varint()
 		key = buff.read()
 
-		try:
-			hashes = buff.unpack_array("q", 17)
-		except BufferUnderrun:
-			# Chunk is no longer cached
-			del self.protocol.other_factory.cache_lists[dimension][key]
-
-		self.protocol.other_factory.cache_lists[dimension][key] = hashes
+		if key in self.protocol.other_factory.cache_lists[dimension]:
+			self.protocol.other_factory.cache_lists[dimension].remove(key)
+		else:
+			self.protocol.other_factory.cache_lists[dimension].append(key)
 
 	def packet_recv_delete_conn(self, buff):
 		# Delete uuid connection

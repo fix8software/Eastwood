@@ -33,12 +33,11 @@ packet_names = [
 	# fields:
 	#	bytes: hashed and salted password
 	#	bytes: the salt
-	("update_chunk_hashes", "upstream"),
+	("toggle_chunk", "upstream"),
 	# packet id # 5
 	# fields:
 	# 	varint: dimension
 	#	bytes: chunk key
-	#   bytes: 17x hashes (one for each seciton and one for tile entities)
 ]
 
 """

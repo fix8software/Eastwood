@@ -4,7 +4,6 @@ Chunk caching system to reduce the netusage of the most expensive packet to send
 from collections import defaultdict
 from mmh3 import hash128
 from twisted.internet import reactor
-from quarry.net.protocol import BufferUnderrun
 
 from eastwood.bincache import Cache
 from eastwood.modules import Module
@@ -54,34 +53,15 @@ class ChunkCacher(Module):
 	def connectionMade(self):
 		"""
 		Loads cached chunks into the tracker
-		Also sends over update_chunk_hashes packets for already cached chunks
+		Also sends over toggle_chunk packets for already cached chunks
 		"""
 		if self.protocol.factory.loaded_cache: # Should only be called once
 			return
 
 		for i in self.protocol.factory.caches.keys():
 			for ident in self.protocol.factory.caches[i].get_all_identifiers():
-				# Unpack data to calculate hashes
-				chunk_data = self.get_cached_chunk(ident)
-				if not chunk_data:
-					continue # Ignore no longer existing chunks
-
-				# Unpack data
-				prim_bit_mask = chunk_data.unpack_varint()
-				chunk_data.unpack_nbt() # Ignore heightmap data
-				sections, _ = chunk_data.unpack_chunk(prim_bit_mask, True, self.dimension == 0)
-				tile_entities = chunk_data.read()
-
-				# Calculate hash for chunk sections
-				hashes = []
-				for section in sections:
-					hashes.append(hash128(self.protocol.buff_class.pack_chunk_section(*section)))
-
-				# Calculate hashes for tile entities
-				hashes.append(hash128(tile_entities))
-
 				self.protocol.factory.tracker[i][ident] = self.threshold + 1 # Set tracker to read from it
-				self.protocol.other_factory.instance.send_packet("update_chunk_hashes", self.protocol.buff_class.pack_varint(i), ident, self.protocol.buff_class.pack_array("q"*17, *hashes)) # Send update_chunk_hashes
+				self.protocol.other_factory.instance.send_packet("toggle_chunk", self.protocol.buff_class.pack_varint(i), ident) # Send toggle_chunk
 
 		self.protocol.factory.loaded_cache = True
 
@@ -155,84 +135,23 @@ class ChunkCacher(Module):
 			self.protocol.factory.tracker[self.dimension][chunk_key] += 1
 			return
 
-		try:
-			# Unpack rest of chunk for hashing
-			prim_bit_mask = buff.unpack_varint()
-		except BufferUnderrun:
+		data = buff.read() # Get rest of chunk data
+		if not data:
 			# There is nothing here, this means we are supposed to send a cached chunk!
 			cached_data = self.generate_cached_chunk_packet(chunk_key)
 			if cached_data:
 				return ("chunk_data", self.protocol.buff_class(cached_data))
 
-			return ("chunk_data", None)
-
-		heightmap = buff.unpack_nbt()
-		sections, biomes = buff.unpack_chunk(prim_bit_mask, full_chunk, self.dimension == 0)
-		try:
-			te_data = buff.read()
-		except BufferUnderrun:
-			te_data = None
-
-		# Check if we are supposed to update the chunk
-		if self.protocol.factory.tracker[self.dimension][chunk_key] > self.threshold:
-			# Chunk data includes changes!
-			# Update the internal cache and send a cached chunk packet!
-
-			# Change sections
-			old_sections, biomes = self.get_chunk_sections(chunk_key)
-			if not old_sections or biomes:
-				return ("chunk_data", None)
-
-			for i in range(16):
-				if sections[i]:
-					old_sections[i] = sections[i]
-
-			self.set_chunk_sections(chunk_key, sections, biomes)
-
-			# Change tile entities
-			if te_data:
-				te_buff = self.protocol.buff_class(te_data)
-
-				tile_entities = {}
-				for _ in range(te_buff.unpack_varint()): # Loop through every tile entity
-					tile_entity = te_buff.unpack_nbt()
-					te_obj = tile_entity.to_obj()[""]
-
-					tile_entities[(te_obj["x"], te_obj["y"], te_obj["z"])] = tile_entity
-
-				self.set_tile_entities(chunk_key, tile_entities)
-
-			# Generate cached chunk packet
-			cached_data = self.generate_cached_chunk_packet(chunk_key)
-			if cached_data:
-				return ("chunk_data", self.protocol.buff_class(cached_data))
-
-			return ("chunk_data", None)
-
-		# Add the chunk like a normal person
-		# Calculate hash for chunk sections
-		hashes = []
-		for section in sections:
-			hashes.append(hash128(self.protocol.buff_class.pack_chunk_section(*section)))
-
-		# Calculate hashes for tile entities
-		hashes.append(hash128(tile_entities))
-
-		# Repack unpacked data (ik it seems redundant but we need bytes to hash, not objects, reading is for keeping the buffer pos correct)
-		prim_bit_mask = self.protocol.buff_class.pack_varint(prim_bit_mask)
-		heightmap = self.protocol.buff_class.pack_nbt(heightmap)
-		chunk_data = self.protocol.buff_class.pack_chunk(sections, biomes)
-
 		# Cache it
 		# The cache stores the everything in the chunk data packet after the full chunk bool
-		self.set_cached_chunk(chunk_key, b"".join(prim_bit_mask, heightmap, chunk_data, tile_entities), insert=True)
+		self.set_cached_chunk(chunk_key, data, insert=True)
 
 		# A chunk with a tracker value > self.threshold will recieve chunk updates
 		# This should be allowed since the data is cached
 		self.protocol.factory.tracker[self.dimension][chunk_key] += 1
 
 		# Tell the other protocol
-		self.protocol.other_factory.instance.send_packet("update_chunk_hashes", self.protocol.buff_class.pack_varint(self.dimension), chunk_key, self.protocol.buff_class.pack_array("q"*17, *hashes))
+		self.protocol.other_factory.instance.send_packet("toggle_chunk", self.protocol.buff_class.pack_varint(self.dimension), chunk_key)
 
 	def packet_send_block_change(self, buff):
 		"""
@@ -326,7 +245,6 @@ class ChunkCacher(Module):
 			# Call set_blocks with data
 			self.set_blocks(chunk_key, *records)
 
-	# TODO: May not be needed, test if this is possible to remove!
 	def packet_send_update_block_entity(self, buff):
 		"""
 		Updates a tile entity, could be add modify or remove
@@ -563,4 +481,4 @@ class ChunkCacher(Module):
 		Call when chunk data is missing from the database
 		"""
 		del self.protocol.factory.tracker[self.dimension][key] # Reset the counter since the chunk is no longer cached
-		self.protocol.other_factory.instance.send_packet("update_chunk_hashes", self.protocol.buff_class.pack_varint(self.dimension), key)
+		self.protocol.other_factory.instance.send_packet("toggle_chunk", self.protocol.buff_class.pack_varint(self.dimension), key)
