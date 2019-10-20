@@ -187,7 +187,7 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		final = meta + result
 		
 		if len(self.__compression_cache) >= self.__CACHE_SIZE:
-			del self.__compression_cache[self.__compression_cache.keys()[0]]
+			del self.__compression_cache[list(self.__compression_cache.keys())[0]]
 		self.__compression_cache[v_key] = final
 			
 		return final
@@ -228,7 +228,7 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 			print('[DEBUG] Decompression Time: {0}ms'.format(msec))
 				
 		if len(self.__decompression_cache) >= self.__CACHE_SIZE:
-			del self.__decompression_cache[self.__decompression_cache.keys()[0]]
+			del self.__decompression_cache[list(self.__decompression_cache.keys())[0]]
 		self.__decompression_cache[v_key] = result
 				
 		return result
