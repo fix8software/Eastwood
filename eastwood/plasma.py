@@ -16,6 +16,7 @@ from collections import deque
 import zstandard as zstd
 import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys
 import urllib.request, mmh3
+from multiprocess import Pool as DillPool
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -86,9 +87,17 @@ class ProcessMappedObject(object):
 		elif cls.__POOL_TYPE == 'multiprocessing':
 			cls.__GLOBAL_POOL = Pool(cls.__THREAD_COUNT)
 			cls.Σ = cls.__GLOBAL_POOL.imap
+		elif cls.__POOL_TYPE == 'multiprocess':
+			cls.__GLOBAL_POOL = DillPool(cls.__THREAD_COUNT)
+			cls.Σ = cls.__GLOBAL_POOL.imap
 		cls.θ = cls.__THREAD_COUNT
 		
 		return object.__new__(cls)
+		
+def encapsulated_byte_func(fargs: tuple) -> bytes:
+	capsule = fargs[0](*fargs[1])
+
+	return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 
 class _GlobalParallelCompressionInterface(ProcessMappedObject):
 	# algo attributes
@@ -96,7 +105,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 	__MIN_LEVEL  = 1
 	
 	# cache attributes
-	__CACHE_SIZE = 8
+	__CACHE_SIZE = 16
 	
 	def __init__(self, nodes: int = cpu_count(), cached: bool = False, target_speed_ms: int = 60, target_speed_buf: int = 5):
 		self.cached = cached
@@ -123,7 +132,10 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 		
 		crand = ThreadedModPseudoRandRestrictedRand()
 		data = [
-			cachedDownload(TRAINING_DATA_URL)
+			cachedDownload(TRAINING_DATA_URL)[      :size  ],
+			cachedDownload(TRAINING_DATA_URL)[size  :size*2],
+			cachedDownload(TRAINING_DATA_URL)[size*2:size*3],
+			cachedDownload(TRAINING_DATA_URL)[size*3:size*4]
 		]
 		
 		for x in data:
@@ -638,11 +650,6 @@ class CryptoModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 class ThreadedModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 	def random(self, size: int = 1):
 		return b''.join(self.Σ(super().random, [math.ceil(size / self.θ) for _ in range(self.θ)]))[:size]
-		
-def encapsulated_byte_func(fargs: tuple) -> bytes:
-	capsule = fargs[0](*fargs[1])
-
-	return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 	
 if __name__ == '__main__':
 	# THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
