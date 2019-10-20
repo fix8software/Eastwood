@@ -22,3 +22,4 @@ psutil==5.6.3
 zstandard==0.11.1
 toml==0.10.0
 pycryptodome==3.9.0
+mmh3==2.5.1

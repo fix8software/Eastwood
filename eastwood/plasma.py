@@ -15,7 +15,7 @@ from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
 import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys
-import urllib.request
+import urllib.request, mmh3
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -90,17 +90,27 @@ class ProcessMappedObject(object):
 		
 		return object.__new__(cls)
 
-class _BZip2ParallelCompressionInterface(ProcessMappedObject):
-	# bzip2 attributes
-	__MAX_LEVEL = 9
-	__MIN_LEVEL = 1
+class _GlobalParallelCompressionInterface(ProcessMappedObject):
+	# algo attributes
+	__MAX_LEVEL  = 9
+	__MIN_LEVEL  = 1
 	
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 60, target_speed_buf: int = 5):
+	# cache attributes
+	__CACHE_SIZE = 8
+	
+	def __init__(self, nodes: int = cpu_count(), cached: bool = False, target_speed_ms: int = 60, target_speed_buf: int = 5):
+		self.cached = cached
+		
 		self.nodes = nodes
 		self.__target_speed = target_speed_ms
 		self.__target_buf = target_speed_buf
 		self.__average_time = deque([0], maxlen=255)
 		self.__table = {}
+		
+		self.__engine = bz2
+		
+		self.__compression_cache = {}
+		self.__decompression_cache = {}
 		
 		self.last_level = self.__MAX_LEVEL
 		self.__global_level = self.__MAX_LEVEL
@@ -136,8 +146,13 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 			
 		return self.__table
 		
-	@functools.lru_cache(maxsize=4)
 	def compress(self, input: bytes, level: int = -1):
+		if self.cached:
+			v_key = mmh3.hash128(input + self.__int_in(level & 0xff))
+		
+			if v_key in self.__compression_cache.keys():
+				return self.__compression_cache[v_key]
+	
 		if level < self.__MIN_LEVEL:
 			accept_level = self.__MIN_LEVEL
 			for k, v in self.__table.items():
@@ -155,7 +170,7 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 			msec = ((time.time() - startt) * 1000)
 			
 			if DEBUG:
-				print('[DEBUG] Compression Time: {0}ms'.format(msec))
+				print('[DEBUG] Compression Time: {0}ms, at level {1}'.format(msec, flevel))
 			
 			self.__average_time.append(((sum(self.__average_time) / len(self.__average_time)) + msec) / 2)
 
@@ -174,20 +189,32 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		else:
 			meta = self.__int_in(0b00000001)
 			
-		return meta + result
+		final = meta + result
+		
+		if self.cached:
+			if len(self.__compression_cache) >= self.__CACHE_SIZE:
+				del self.__compression_cache[list(self.__compression_cache.keys())[0]]
+			self.__compression_cache[v_key] = final
+			
+		return final
 		
 	def __p_compress(self, input: bytes, level: int) -> bytes:
-		x = self.__chunks(input, 98304 * level)
+		x = self.__chunks(input, 65536 * level)
 		
-		return b''.join(self.Σ(encapsulated_byte_func, [(bz2.compress, self.__level_arguments(c, level)) for c in x]))
+		return b''.join(self.Σ(encapsulated_byte_func, [(self.__engine.compress, self.__level_arguments(c, level)) for c in x]))
 		
-	@functools.lru_cache(maxsize=4)
 	def decompress(self, input: bytes) -> bytes:
 		"""
 		Main decompression function.
 		Args:
 			input: Bytes to decompress - Note this is not compatible with the output of the standard compression function.
 		"""
+		
+		if self.cached:
+			v_key = mmh3.hash128(input)
+		
+			if v_key in self.__decompression_cache.keys():
+				return self.__decompression_cache[v_key]
 
 		startt = time.time()
 		if self.__int_out(input[:META_BYTES]) == 0b00000000:
@@ -201,11 +228,16 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 			
-		result = b''.join(self.Σ(bz2.decompress, chunks))
+		result = b''.join(self.Σ(self.__engine.decompress, chunks))
 		msec = ((time.time() - startt) * 1000)
 		
 		if DEBUG:
 			print('[DEBUG] Decompression Time: {0}ms'.format(msec))
+				
+		if self.cached:
+			if len(self.__decompression_cache) >= self.__CACHE_SIZE:
+				del self.__decompression_cache[list(self.__decompression_cache.keys())[0]]
+			self.__decompression_cache[v_key] = result
 				
 		return result
 		
@@ -476,7 +508,7 @@ class ParallelCompressionInterface(ThreadMappedObject):
 	def __internal_decompression(self, input: bytes) -> bytes:
 		return self.__decompress(input)
 
-ParallelCompressionInterface = _BZip2ParallelCompressionInterface
+ParallelCompressionInterface = _GlobalParallelCompressionInterface
 
 class _SingleThreadedAESCipher(ThreadMappedObject):
 	__IV_SIZE = 12
