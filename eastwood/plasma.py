@@ -90,8 +90,8 @@ class ProcessMappedObject(object):
 		
 		return object.__new__(cls)
 
-class _BZip2ParallelCompressionInterface(ProcessMappedObject):
-	# bzip2 attributes
+class _GlobalParallelCompressionInterface(ProcessMappedObject):
+	# algo attributes
 	__MAX_LEVEL  = 9
 	__MIN_LEVEL  = 1
 	
@@ -106,6 +106,8 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		self.__target_buf = target_speed_buf
 		self.__average_time = deque([0], maxlen=255)
 		self.__table = {}
+		
+		self.__engine = zlib
 		
 		self.__compression_cache = {}
 		self.__decompression_cache = {}
@@ -197,9 +199,9 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		return final
 		
 	def __p_compress(self, input: bytes, level: int) -> bytes:
-		x = self.__chunks(input, 98304 * level)
+		x = self.__chunks(input, 65536 * level)
 		
-		return b''.join(self.Σ(encapsulated_byte_func, [(bz2.compress, self.__level_arguments(c, level)) for c in x]))
+		return b''.join(self.Σ(encapsulated_byte_func, [(self.__engine.compress, self.__level_arguments(c, level)) for c in x]))
 		
 	def decompress(self, input: bytes) -> bytes:
 		"""
@@ -226,7 +228,7 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 			
-		result = b''.join(self.Σ(bz2.decompress, chunks))
+		result = b''.join(self.Σ(self.__engine.decompress, chunks))
 		msec = ((time.time() - startt) * 1000)
 		
 		if DEBUG:
@@ -506,7 +508,7 @@ class ParallelCompressionInterface(ThreadMappedObject):
 	def __internal_decompression(self, input: bytes) -> bytes:
 		return self.__decompress(input)
 
-ParallelCompressionInterface = _BZip2ParallelCompressionInterface
+ParallelCompressionInterface = _GlobalParallelCompressionInterface
 
 class _SingleThreadedAESCipher(ThreadMappedObject):
 	__IV_SIZE = 12
