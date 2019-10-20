@@ -3,7 +3,24 @@ P L A S M A
 
 Naphtha's library for parallel, timed operations such as Compression
 and Encryption.
+
+Exposes the following utilities:
+	- ParallelAESInterface - Fast AES encryption
+	- ParallelCompressionInterface - Fast AND efficient compression
+	- IteratedSaltedHash - Secure password hashing (You ought to use bcrypt though)
+	- Khaki - Lightweight data format
+	- StaticKhaki - Simpler interface to Khaki
+	
+Requirements:
+	psutil==5.6.3
+	zstandard==0.11.1
+	pycryptodome==3.9.0
+	mmh3==2.5.1
+	multiprocess==0.70.9
+	colorama==0.4.1
 """
+
+# All module imports
 from Crypto import Random
 from Crypto.Cipher import AES
 from psutil import cpu_count
@@ -19,78 +36,99 @@ import urllib.request, mmh3, colorama, struct, re, psutil, uuid, json, socket
 from multiprocess import Pool as DillPool
 
 # These are the only classes that ought to be used with Plasma publicly.
-__all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
+__all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki"]
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
+# SIZE_BYTES (3)        - How many bytes to represent the size of each ParallelCompressionInterface chunk with?
+# META_BYTES (1)        - How many bytes to represent the size of metadata with?
+# BYTE_ORDER ('little') - What byte order should be used?
 SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
+
+# Training data to use with the compressor. Only downloaded once.
+# By default, it uses around 8 MiB of Minecraft 1.14.4 packet captures.
 TRAINING_DATA_URL = 'https://github.com/smplite/Eastwood/raw/master/eastwood/testdata/large_packet_sample.bin'
 
 # Everything important that you ought not to touch starts here.
+# ---------------------------------------------------------------------------------------------------------------
+
+# Check for debug mode.
 try:
 	DEBUG = (lambda x: True if x == 'DEBUG' else False)(sys.argv[1])
 except IndexError:
+	# If the argument is not set, debug mode is not set.
 	DEBUG = False
+	
 if DEBUG:
+	# If debug mode is enabled, we will need colour. Initialize colorama.
 	colorama.init()
 
-@functools.lru_cache(maxsize=32)
+@functools.lru_cache(maxsize=32) # Minor speed improvement, as Python's built in hash is faster than crc32.
 def cachedStringHash(i: str) -> str:
-	return hex(zlib.crc32(i.encode('utf8')))[2:]
+	return hex(zlib.crc32(i.encode('utf8')))[2:] # Only ever take string, only ever produce string.
+	                                             # This is designed to serve a very specific purpose.
 
-@functools.lru_cache(maxsize=16)
+@functools.lru_cache(maxsize=16) # Prevents checking filesystem multiple times.
 def cachedDownload(url: str) -> bytes:
-	if not os.path.exists('./cache'):
-		os.makedirs('./cache')
+	if not os.path.exists('./cache'): # Check for a cache directory.
+		os.makedirs('./cache')        # Make the cache directory if it doesn't exist already.
 		
-	cache_file = './cache/{0}.pdc'.format(cachedStringHash(url))
+	cache_file = './cache/{0}.pdc'.format(cachedStringHash(url)) # Determine the file's in-cache name.
 		
-	if not os.path.isfile(cache_file):
-		response = urllib.request.urlopen(url)
+	if not os.path.isfile(cache_file): # If it isn't in the cache, download it.
+		response = urllib.request.urlopen(url) # This works just like a regular file handle, surprisingly.
 		data = response.read()
 		
-		with open(cache_file, 'wb') as cache_output:
+		with open(cache_file, 'wb') as cache_output: # Write it to the cache file. It will be read again,
+													 # hence the LRU cache, to prevent constant writing and
+													 # reading over and over again.
 			cache_output.write(data)
 			
-	with open(cache_file, 'rb') as cache_input:
+	with open(cache_file, 'rb') as cache_input: # And this is where the cache is re-read.
 		return cache_input.read()
 
-@functools.lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=None) # Prevents various checks being performed multiple times.
 def getSystemInfo():
-	info={}
-	info['platform']=platform.system()
-	info['platform-release']=platform.release()
-	info['platform-version']=platform.version()
-	info['architecture']=platform.machine()
-	info['hostname']=socket.gethostname()
-	info['ip-address']=socket.gethostbyname(socket.gethostname())
-	info['mac-address']=':'.join(re.findall('..', '%012x' % uuid.getnode()))
-	info['processor']=platform.processor()
-	info['ram']=str(round(psutil.virtual_memory().total / (1024.0 **3)))+" GB"
+	info                     = {}
+	info['platform']         = platform.system()
+	info['platform-release'] = platform.release()
+	info['platform-version'] = platform.version()
+	info['architecture']     = platform.machine()
+	info['hostname']         = socket.gethostname()
+	info['ip-address']       = socket.gethostbyname(socket.gethostname())
+	info['mac-address']      = ':'.join(re.findall('..', '%012x' % uuid.getnode())) # You'd think this would be
+																			        # slightly easier...
+	info['processor']        = platform.processor()
+	info['ram']              = str(round(psutil.virtual_memory().total / (1024.0 ** 3)))+" GB"
 	return info
 
 class ThreadMappedObject(object):
-	__POOL_TYPE = 'multiprocessing'
-	__THREAD_COUNT = cpu_count() * 2
+	__POOL_TYPE = 'multiprocessing' # Multiprocessing seems fastest here.
+	__THREAD_COUNT = cpu_count() * 2 # Use twice as many threads as the core count for, apparently, good perf.
 
 	def __init__(self):
 		super().__init__()
 
-	def __new__(cls, *args, **kwargs):
+	def __new__(cls, *args, **kwargs): # Using __new__ in case __init__ is not called.
 		if cls.__POOL_TYPE == 'concurrent.futures':
 			cls.__GLOBAL_POOL = ThreadPoolExecutor(max_workers = cls.__THREAD_COUNT)
-			cls.Σ = cls.__GLOBAL_POOL.map
+			cls.Σ = cls.__GLOBAL_POOL.map # Create a function "Σ" so that the child class can map iterables to
+										  # the mutliprocessing pool.
+										  # 
+										  # No, I don't know why I decided to pick that function name.
+										  # Yes, I know it's kind of bad practice.
+										  # No, I don't care.
 		elif cls.__POOL_TYPE == 'multiprocessing':
 			cls.__GLOBAL_POOL = ThreadPool(cls.__THREAD_COUNT)
 			cls.Σ = cls.__GLOBAL_POOL.imap
-		cls.θ = cls.__THREAD_COUNT
+		cls.θ = cls.__THREAD_COUNT # θ represents the amount of threads spawned.
 		
 		return object.__new__(cls)
 
 class ProcessMappedObject(object):
-	__POOL_TYPE = 'concurrent.futures'
+	__POOL_TYPE = 'concurrent.futures' # concurrent.futures seems to be fastest here.
 	__THREAD_COUNT = cpu_count() * 2
 
 	def __init__(self):
@@ -103,7 +141,7 @@ class ProcessMappedObject(object):
 		elif cls.__POOL_TYPE == 'multiprocessing':
 			cls.__GLOBAL_POOL = Pool(cls.__THREAD_COUNT)
 			cls.Σ = cls.__GLOBAL_POOL.imap
-		elif cls.__POOL_TYPE == 'multiprocess':
+		elif cls.__POOL_TYPE == 'multiprocess': # Multiprocess uses dill instead of cPickle.
 			cls.__GLOBAL_POOL = DillPool(cls.__THREAD_COUNT)
 			cls.Σ = cls.__GLOBAL_POOL.imap
 		cls.θ = cls.__THREAD_COUNT
@@ -111,8 +149,14 @@ class ProcessMappedObject(object):
 		return object.__new__(cls)
 		
 def encapsulated_byte_func(fargs: tuple) -> bytes:
-	capsule = fargs[0](*fargs[1])
+	"""
+		This function is not important, other than it is involved with the encapsulation process
+		of compressed data chunks. Don't worry about it.
+	"""
+	capsule = fargs[0](*fargs[1]) # Usually, should perform bz2, zstd or zlib compression with a
+								  # given level and data to compress.
 
+	# Here, the result is "encapsulated" by prepending its length.
 	return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 
 # Currentl ParallelCompressionInterface - Latest features
@@ -127,31 +171,55 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 	class ChecksumFailureException(Exception):
 		pass
 	
-	def __init__(self, nodes: int = cpu_count(), cached: bool = False, target_speed_ms: int = 35, target_speed_buf: int = 5):
-		self.cached = cached
+	def __init__(
+			self,
+			nodes: int = cpu_count(),   # Thread count. Ought to be un-used.
+			cached: bool = False,       # Whether or not to cache requests.
+			target_speed_ms: int = 35,  # Maximum time it should take to compress anything.
+			target_speed_buf: int = 5   # When should PRIZMA start to raise the compression level?
+		):
 		
+		# Allow arguments to be accessed across the class.
+		self.cached = cached
 		self.nodes = nodes
 		self.__target_speed = target_speed_ms
 		self.__target_buf = target_speed_buf
+		
+		# WAU/PRIZMA data
 		self.__average_time = deque([0], maxlen=255)
 		self.__table = {}
 		
+		# Compression engine. Works with bz2 OR zlib.
 		self.__engine = bz2
 		
+		# Request caching. Optional.
 		self.__compression_cache = {}
 		self.__decompression_cache = {}
 		
+		# Information for whatever uses this class.
 		self.last_level = self.__MAX_LEVEL
+		
+		# PRIZMA level.
 		self.__global_level = self.__MAX_LEVEL
 		
+		# Create the WAU table.
 		self.create_level_table()
 
 	def create_level_table(self, size = 262144):
+		"""
+		This function creates everything a system called WAU needs to improve compression speed.
+		
+		Based on the data stored in the table this produces, WAU can automatically adjust the
+		compression level based on the length of the data provided.
+		"""
+	
 		self.__table = {}
 		self.__table_size = size
 		
 		crand = ThreadedModPseudoRandRestrictedRand()
 		data = [
+			# Assuming a table size of 262144, this will perform tests on parts of the training data
+			# with a size of 262144 per test. In total, about 1 MiB of the data should be tested.
 			cachedDownload(TRAINING_DATA_URL)[      :size  ],
 			cachedDownload(TRAINING_DATA_URL)[size  :size*2],
 			cachedDownload(TRAINING_DATA_URL)[size*2:size*3],
@@ -163,52 +231,67 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 			# the first level during the real task. ¯\_(ツ)_/¯
 			__ = self.compress(x, self.__MIN_LEVEL)
 		
+		# Generate values for each compression level.
 		for level in range(self.__MIN_LEVEL, self.__MAX_LEVEL + 1):
 			times = []
 			for x in data:
-				for _ in range(2):
+				for _ in range(2): # Perform twice for accuracy.
 					s = time.time()
 					__ = self.compress(x, level)
 					t = time.time() - s
 					times.append(t)
 			a = sum(times) / len(times)
-			timebyte = (a / self.__table_size)
+			timebyte = (a / self.__table_size) # Calculate the time per byte.
 		
 			self.__table[level] = (timebyte)
 			
 		return self.__table
 		
 	def compress(self, input: bytes, level: int = -1):
+		"""
+		Main compression function.
+		Args:
+			input: Bytes to compress
+			level: Compression level (Set to -1 for WAU/PRIZMA auto-set)
+		"""
 		if self.cached:
+			# Check if the compressed data is already in the cache.
 			v_key = mmh3.hash128(input + self.__int_in(level & 0xff))
 		
 			if v_key in self.__compression_cache.keys():
-				return self.__compression_cache[v_key]
+				return self.__compression_cache[v_key] # Return it if it is.
 	
+		# If the level is invalid, switch to auto.
 		if level < self.__MIN_LEVEL:
 			accept_level = self.__MIN_LEVEL
-			for k, v in self.__table.items():
+			for k, v in self.__table.items(): # WAU (length level system)
+											  # Move along table until appropriate level found.
 				if ((v * len(input)) * 1000) < self.__target_speed + self.__target_buf:
 					accept_level = k
 		
-			flevel = int(round((self.__global_level + accept_level) / 2))
+			flevel = int(round((self.__global_level + accept_level) / 2)) # PRIZMA (global level system)
 		else:
 			flevel = level
 	
-		startt = time.time()
-		result = self.__p_compress(input, flevel)
+		startt = time.time() # Begin timing compression for PRIZMA.
+		result = self.__p_compress(input, flevel) # Perform parallel compression here.
 		
-		msec = -1
+		msec = -1 # In case auto-level is off, set time to -1 for exif data.
 		if level < self.__MIN_LEVEL:
 			msec = ((time.time() - startt) * 1000)
 			
+			# Print debug information if enabled.
 			if DEBUG:
-				print('[DEBUG] '+colorama.Fore.RED+colorama.Style.BRIGHT+'Compression'+colorama.Style.RESET_ALL+' Time: {0}ms at level {1} ({2} times smaller)'.format(
-					str(round(msec, 1)).ljust(10),
-					str(flevel).ljust(4),
-					str(int(round(len(input) / len(result)))).ljust(8)
-				))
+				print(
+					'[DEBUG] '+colorama.Fore.RED+colorama.Style.BRIGHT+'Compression'+colorama.Style.RESET_ALL+' Time: {0}ms at level {1} ({2} times smaller)'.format(
+						str(round(msec, 1)).ljust(10),
+						str(flevel).ljust(4),
+						str(int(round(len(input) / len(result)))).ljust(8)
+					)
+				)
 			
+			# Perform PRIZMA calculations, where global level is lowered if compression took too long and
+			# global level is raised if it didn't take enough time.
 			self.__average_time.append(((sum(self.__average_time) / len(self.__average_time)) + msec) / 2)
 
 			averaged = self.__average_time[-1]
@@ -218,8 +301,10 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 			elif averaged < self.__target_speed - self.__target_buf and self.__global_level < self.__MAX_LEVEL:
 				self.__global_level += 1
 		
+		# Expose the last level selected to exterior processes.
 		self.last_level = flevel
 			
+		# Generate EXIF/ExIf (Extra Information), which can be used by the decompressor for debug or verification purposes.
 		final = StaticKhaki.dumps({
 			'compressed': result,
 			
@@ -233,21 +318,39 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 				'checksum'           : mmh3.hash128(input),
 				'compressed_checksum': mmh3.hash128(result),
 				'platform'           : getSystemInfo(),
-				'device_fingerprint' : mmh3.hash128(StaticKhaki.dumps(list(platform.uname())))
+				'device_fingerprint' : mmh3.hash128(StaticKhaki.dumps(list(platform.uname()))),
+				'caching_enabled'    : self.cached
 			}
 		}, compressed = False)
 		
+		# If caching is enabled, cache this data.
 		if self.cached:
 			if len(self.__compression_cache) >= self.__CACHE_SIZE:
+				# Delete an entry from the cache if there are too many of them.
 				del self.__compression_cache[list(self.__compression_cache.keys())[0]]
 			self.__compression_cache[v_key] = final
 			
 		return final
 		
 	def __p_compress(self, input: bytes, level: int) -> bytes:
-		x = self.__chunks(input, 131070 * level)
+		# This is where parallel compression is finally performed.
+		# First, break up the data into chunks roughly the size of the bz2 block size.
+		x = self.__chunks(input, 102400 * level)
 		
-		return b''.join(self.Σ(encapsulated_byte_func, [(self.__engine.compress, self.__level_arguments(c, level)) for c in x]))
+		# Then, create encapsulation arguments containing level, data and compression engine.
+		# Then call the encapsulation function in the process pool.
+		# Then join up the output to form a continuous string of bytes.
+		return b''.join(
+			self.Σ(
+				encapsulated_byte_func,
+				[
+					(
+						self.__engine.compress,
+						self.__level_arguments(c, level)
+					) for c in x
+				]
+			)
+		)
 		
 	def decompress(self, input: bytes) -> bytes:
 		"""
@@ -256,40 +359,53 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 			input: Bytes to decompress - Note this is not compatible with the output of the standard compression function.
 		"""
 		
+		# Calculate the input length before the variable is modified.
 		input_length = len(input)
 		
+		# Same caching situation as before in compress()
 		if self.cached:
 			v_key = mmh3.hash128(input)
 		
 			if v_key in self.__decompression_cache.keys():
 				return self.__decompression_cache[v_key]
 
+		# This time, timing is only required for debugging purposes.
 		startt = time.time()
+		
+		# Feed the compressor's output through Khaki to decode it.
 		decoded = StaticKhaki.loads(input)
 		
+		# This is all we need to actually perform the decompression.
 		input = decoded['compressed']
 
+		# Break it all back up into chunks for parallel decompression.
 		chunks = []
-		while len(input) > 0:
+		while len(input) > 0: # Remove from input until it is empty.
 			chunk_length = int.from_bytes(input[:SIZE_BYTES], byteorder=BYTE_ORDER)
 			chunks.append(input[SIZE_BYTES:SIZE_BYTES+chunk_length])
 			input = input[SIZE_BYTES+chunk_length:]
 			
+		# Parallel decompression is much easier than parallel compression, as we don't need to specify a level.
 		result = b''.join(self.Σ(self.__engine.decompress, chunks))
-		msec = ((time.time() - startt) * 1000)
+		msec = ((time.time() - startt) * 1000) # The final time it took to decompress.
 		
+		# Again, more debug printing.
 		if DEBUG:
-			print('[DEBUG] '+colorama.Fore.GREEN+colorama.Style.BRIGHT+'Decompress.'+colorama.Style.RESET_ALL+' Time: {0}ms at level {1} ({2} times bigger )'.format(
-				str(round(msec, 1)).ljust(10),
-				str(decoded['exif']['compression_level']).ljust(4),
-				str(int(round(len(result) / input_length))).ljust(8)
-			))
+			print(
+				'[DEBUG] '+colorama.Fore.GREEN+colorama.Style.BRIGHT+'Decompress.'+colorama.Style.RESET_ALL+' Time: {0}ms at level {1} ({2} times bigger )'.format(
+					str(round(msec, 1)).ljust(10),
+					str(decoded['exif']['compression_level']).ljust(4),
+					str(int(round(len(result) / input_length))).ljust(8)
+				)
+			)
 				
+		# Same caching situation as before.
 		if self.cached:
 			if len(self.__decompression_cache) >= self.__CACHE_SIZE:
 				del self.__decompression_cache[list(self.__decompression_cache.keys())[0]]
 			self.__decompression_cache[v_key] = result
 				
+		# Use compression exif to determine if output is valid.
 		if decoded['exif']['checksum'] != mmh3.hash128(result):
 			raise self.ChecksumFailureException('The decompressor has yielded invalid data! Check the integrity of your data stream.')
 				
@@ -297,15 +413,24 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 		
 	@staticmethod
 	def __chunks(l, n):
+		"""
+		This static method is used to break up data into chunks of n size.
+		"""
 		for i in range(0, len(l), n):
 			yield l[i:i+n]
 			
 	@staticmethod
 	def __int_in(i: int, s: int = META_BYTES):
+		"""
+		Convert integer i into s bytes.
+		"""
 		return i.to_bytes(s, byteorder=BYTE_ORDER)
 
 	@staticmethod
 	def __int_out(i: bytes):
+		"""
+		Convert i (bytes) into integer.
+		"""
 		return int.from_bytes(i, byteorder=BYTE_ORDER)
 		
 	@staticmethod
