@@ -335,7 +335,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
     def __p_compress(self, input: bytes, level: int) -> bytes:
         # This is where parallel compression is finally performed.
         # First, break up the data into chunks roughly the size of the bz2 block size.
-        x = self.__chunks(input, 102400 * level)
+        x = self.__chunks(input, 100000 * level)
         
         # Then, create encapsulation arguments containing level, data and compression engine.
         # Then call the encapsulation function in the process pool.
