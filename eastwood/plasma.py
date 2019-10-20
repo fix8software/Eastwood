@@ -184,7 +184,11 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 			msec = ((time.time() - startt) * 1000)
 			
 			if DEBUG:
-				print('[DEBUG] '+colorama.Fore.RED+colorama.Style.BRIGHT+'Compression'+colorama.Style.RESET_ALL+' Time: {0}ms at level {1} ({2} times smaller)'.format(str(round(msec, 1)).ljust(10), str(flevel).ljust(4), str(int(round(len(input) / len(result)))).ljust(8)))
+				print('[DEBUG] '+colorama.Fore.RED+colorama.Style.BRIGHT+'Compression'+colorama.Style.RESET_ALL+' Time: {0}ms at level {1} ({2} times smaller)'.format(
+					str(round(msec, 1)).ljust(10),
+					str(flevel).ljust(4),
+					str(int(round(len(input) / len(result)))).ljust(8)
+				))
 			
 			self.__average_time.append(((sum(self.__average_time) / len(self.__average_time)) + msec) / 2)
 
@@ -458,7 +462,17 @@ class ParallelCompressionInterface(ThreadMappedObject):
 		"""
 
 		if level < 1:
-			suggested = (lambda x,l,u: l if x<l else u if x>u else x)((lambda x,a,b,c,d: (x-a)/(b-a)*(d-c)+c)(len(input),0,self.__average_too_high_size,self.__MAX_LEVEL,self.__MIN_LEVEL),self.__MIN_LEVEL,self.__MAX_LEVEL)
+			suggested = (lambda x,l,u: l if x<l else u if x>u else x)( # Check if within range
+				(lambda x,a,b,c,d: (x-a)/(b-a)*(d-c)+c)( # Map to range
+					len(input),
+					0,
+					self.__average_too_high_size,
+					self.__MAX_LEVEL,
+					self.__MIN_LEVEL
+				),
+				self.__MIN_LEVEL,
+				self.__MAX_LEVEL
+			)
 			level = int(round((self.__global_level + suggested) / 2))
 
 		startt = time.time()
