@@ -160,15 +160,15 @@ def encapsulated_byte_func(fargs: tuple) -> bytes:
     return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 
 class ZStandardSimpleInterface(object):
-	@staticmethod
-	def compress(data: bytes, level: int = 1) -> bytes:
-		x = zstd.ZstdCompressor(level = level, threads = cpu_count())
-		return x.compress(data)
-		
-	@staticmethod
-	def decompress(data: bytes) -> bytes:
-		x = zstd.ZstdDecompressor()
-		return x.decompress(data)
+    @staticmethod
+    def compress(data: bytes, level: int = 1) -> bytes:
+        x = zstd.ZstdCompressor(level = level, threads = cpu_count())
+        return x.compress(data)
+        
+    @staticmethod
+    def decompress(data: bytes) -> bytes:
+        x = zstd.ZstdDecompressor()
+        return x.decompress(data)
 
 # Currently ParallelCompressionInterface - Latest features
 class _GlobalParallelCompressionInterface(ProcessMappedObject):
@@ -184,15 +184,17 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
     
     def __init__(
             self,
-            nodes: int = cpu_count(),   # Thread count. Ought to be un-used.
-            cached: bool = False,       # Whether or not to cache requests.
-            target_speed_ms: int = 20,  # Maximum time it should take to compress anything.
-            target_speed_buf: int = 5   # When should PRIZMA start to raise the compression level?
+            nodes: int = cpu_count() * 2,   # Thread count.
+            cached: bool = False,           # Whether or not to cache requests.
+            bz2chunk: bool = False,         # If true, split by block size. If false, split equally.
+            target_speed_ms: int = 20,      # Maximum time it should take to compress anything.
+            target_speed_buf: int = 5       # When should PRIZMA start to raise the compression level?
         ):
         
         # Allow arguments to be accessed across the class.
         self.cached = cached
         self.nodes = nodes
+        self.bz2chunk = bz2chunk
         self.__target_speed = target_speed_ms
         self.__target_buf = target_speed_buf
         
@@ -346,7 +348,10 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
     def __p_compress(self, input: bytes, level: int) -> bytes:
         # This is where parallel compression is finally performed.
         # First, break up the data into chunks roughly the size of the compression engine's block size at each level.
-        x = self.__chunks(input, 32768 * level)
+        if self.bz2chunk:
+            x = self.__chunks(input, 32768 * level)
+        else:
+            x = self.__chunks(input, int(round(len(input) / self.nodes)))
         
         # Then, create encapsulation arguments containing level, data and compression engine.
         # Then call the encapsulation function in the process pool.
