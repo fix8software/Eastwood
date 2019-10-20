@@ -778,6 +778,17 @@ class Khaki(object):
 				data[key] = value
 			
 			return data
+			
+class StaticKhaki:
+	@staticmethod
+	def dumps(i) -> bytes:
+		x = Khaki()
+		return x.dumps(i)
+		
+	@staticmethod
+	def loads(i: bytes):
+		x = Khaki()
+		return x.loads(i)
 	
 if __name__ == '__main__':
 	# THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
