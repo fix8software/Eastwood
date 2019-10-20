@@ -998,11 +998,11 @@ class StaticKhaki:
         x = Khaki()
         return x.loads(*args, **kwargs)
     
-if __name__ == '__main__':
+def _main():
     # THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
     # DON'T RUN THIS.
     
-    import cProfile, sys
+    import sys
     x = ThreadedModPseudoRandRestrictedRand()
     
     st = time.time()
@@ -1053,3 +1053,8 @@ if __name__ == '__main__':
 
     x, y = IteratedSaltedHash(b'helloworld')
     print(x)
+    
+if __name__ == '__main__':
+    import cProfile
+    
+    cProfile.run('_main()', sort='tottime')
