@@ -98,7 +98,9 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 	# cache attributes
 	__CACHE_SIZE = 8
 	
-	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 60, target_speed_buf: int = 5):
+	def __init__(self, nodes: int = cpu_count(), cached: bool = False, target_speed_ms: int = 60, target_speed_buf: int = 5):
+		self.cached = cached
+		
 		self.nodes = nodes
 		self.__target_speed = target_speed_ms
 		self.__target_buf = target_speed_buf
@@ -143,10 +145,11 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		return self.__table
 		
 	def compress(self, input: bytes, level: int = -1):
-		v_key = mmh3.hash128(input + self.__int_in(level & 0xff))
-	
-		if v_key in self.__compression_cache.keys():
-			return self.__compression_cache[v_key]
+		if self.cached:
+			v_key = mmh3.hash128(input + self.__int_in(level & 0xff))
+		
+			if v_key in self.__compression_cache.keys():
+				return self.__compression_cache[v_key]
 	
 		if level < self.__MIN_LEVEL:
 			accept_level = self.__MIN_LEVEL
@@ -186,9 +189,10 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 			
 		final = meta + result
 		
-		if len(self.__compression_cache) >= self.__CACHE_SIZE:
-			del self.__compression_cache[list(self.__compression_cache.keys())[0]]
-		self.__compression_cache[v_key] = final
+		if self.cached:
+			if len(self.__compression_cache) >= self.__CACHE_SIZE:
+				del self.__compression_cache[list(self.__compression_cache.keys())[0]]
+			self.__compression_cache[v_key] = final
 			
 		return final
 		
@@ -203,11 +207,12 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		Args:
 			input: Bytes to decompress - Note this is not compatible with the output of the standard compression function.
 		"""
-
-		v_key = mmh3.hash128(input)
-	
-		if v_key in self.__decompression_cache.keys():
-			return self.__decompression_cache[v_key]
+		
+		if self.cached:
+			v_key = mmh3.hash128(input)
+		
+			if v_key in self.__decompression_cache.keys():
+				return self.__decompression_cache[v_key]
 
 		startt = time.time()
 		if self.__int_out(input[:META_BYTES]) == 0b00000000:
@@ -227,9 +232,10 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		if DEBUG:
 			print('[DEBUG] Decompression Time: {0}ms'.format(msec))
 				
-		if len(self.__decompression_cache) >= self.__CACHE_SIZE:
-			del self.__decompression_cache[list(self.__decompression_cache.keys())[0]]
-		self.__decompression_cache[v_key] = result
+		if self.cached:
+			if len(self.__decompression_cache) >= self.__CACHE_SIZE:
+				del self.__decompression_cache[list(self.__decompression_cache.keys())[0]]
+			self.__decompression_cache[v_key] = result
 				
 		return result
 		
