@@ -15,7 +15,7 @@ from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
 import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys
-import urllib.request
+import urllib.request, mmh3
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -92,8 +92,11 @@ class ProcessMappedObject(object):
 
 class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 	# bzip2 attributes
-	__MAX_LEVEL = 9
-	__MIN_LEVEL = 1
+	__MAX_LEVEL  = 9
+	__MIN_LEVEL  = 1
+	
+	# cache attributes
+	__CACHE_SIZE = 255
 	
 	def __init__(self, nodes: int = cpu_count(), target_speed_ms: int = 60, target_speed_buf: int = 5):
 		self.nodes = nodes
@@ -101,6 +104,9 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		self.__target_buf = target_speed_buf
 		self.__average_time = deque([0], maxlen=255)
 		self.__table = {}
+		
+		self.__compression_cache = {}
+		self.__decompression_cache = {}
 		
 		self.last_level = self.__MAX_LEVEL
 		self.__global_level = self.__MAX_LEVEL
@@ -136,8 +142,12 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 			
 		return self.__table
 		
-	@functools.lru_cache(maxsize=4)
 	def compress(self, input: bytes, level: int = -1):
+		v_key = mmh3.hash128(input + self.__int_in(level & 0xff))
+	
+		if v_key in self.__compression_cache.keys():
+			return self.__compression_cache[v_key]
+	
 		if level < self.__MIN_LEVEL:
 			accept_level = self.__MIN_LEVEL
 			for k, v in self.__table.items():
@@ -155,7 +165,7 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 			msec = ((time.time() - startt) * 1000)
 			
 			if DEBUG:
-				print('[DEBUG] Compression Time: {0}ms'.format(msec))
+				print('[DEBUG] Compression Time: {0}ms, at level {1}'.format(msec, flevel))
 			
 			self.__average_time.append(((sum(self.__average_time) / len(self.__average_time)) + msec) / 2)
 
@@ -174,20 +184,30 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		else:
 			meta = self.__int_in(0b00000001)
 			
-		return meta + result
+		final = meta + result
+		
+		if len(self.__compression_cache) >= self.__CACHE_SIZE:
+			del self.__compression_cache[self.__compression_cache.keys()[0]]
+		self.__compression_cache[v_key] = final
+			
+		return final
 		
 	def __p_compress(self, input: bytes, level: int) -> bytes:
 		x = self.__chunks(input, 98304 * level)
 		
 		return b''.join(self.Σ(encapsulated_byte_func, [(bz2.compress, self.__level_arguments(c, level)) for c in x]))
 		
-	@functools.lru_cache(maxsize=4)
 	def decompress(self, input: bytes) -> bytes:
 		"""
 		Main decompression function.
 		Args:
 			input: Bytes to decompress - Note this is not compatible with the output of the standard compression function.
 		"""
+
+		v_key = mmh3.hash128(input)
+	
+		if v_key in self.__decompression_cache.keys():
+			return self.__decompression_cache[v_key]
 
 		startt = time.time()
 		if self.__int_out(input[:META_BYTES]) == 0b00000000:
@@ -206,6 +226,10 @@ class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 		
 		if DEBUG:
 			print('[DEBUG] Decompression Time: {0}ms'.format(msec))
+				
+		if len(self.__decompression_cache) >= self.__CACHE_SIZE:
+			del self.__decompression_cache[self.__decompression_cache.keys()[0]]
+		self.__decompression_cache[v_key] = result
 				
 		return result
 		
