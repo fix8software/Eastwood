@@ -128,7 +128,7 @@ class ThreadMappedObject(object):
         return object.__new__(cls)
 
 class ProcessMappedObject(object):
-    __POOL_TYPE = 'concurrent.futures' # concurrent.futures seems to be fastest here.
+    __POOL_TYPE = 'multiprocessing'
     __THREAD_COUNT = cpu_count() * 2
 
     def __init__(self):
@@ -199,7 +199,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         self.__target_buf = target_speed_buf
         
         # WAU/PRIZMA data
-        self.__average_time = deque([0], maxlen=255)
+        self.__average_time = deque([0], maxlen=8192)
         self.__table = {}
         
         # Compression engine. Works with bz2 OR zlib.
@@ -328,10 +328,10 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
                 'compressed_size'    : len(result),
                 'compression_level'  : flevel,
                 'specified_level'    : level,
-                'checksum'           : mmh3.hash128(input),
-                'compressed_checksum': mmh3.hash128(result),
+                'checksum'           : mmh3.hash(input),
+                'compressed_checksum': mmh3.hash(result),
                 'platform'           : getSystemInfo(),
-                'device_fingerprint' : mmh3.hash128(StaticKhaki.dumps(list(platform.uname()))),
+                'device_fingerprint' : mmh3.hash(StaticKhaki.dumps(list(platform.uname()))),
                 'caching_enabled'    : self.cached
             }
         }, compressed = False)
