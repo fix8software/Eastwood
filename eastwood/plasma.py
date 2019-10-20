@@ -15,6 +15,7 @@ from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
 import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys
+import urllib.request
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash"]
@@ -24,11 +25,34 @@ __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSalt
 SIZE_BYTES = 3
 META_BYTES = 1
 BYTE_ORDER = 'little'
+TRAINING_DATA_URL = 'https://github.com/smplite/Eastwood/raw/master/eastwood/testdata/large_packet_sample.bin'
 
+# Everything important that you ought not to touch starts here.
 try:
 	DEBUG = (lambda x: True if x == 'DEBUG' else False)(sys.argv[1])
 except IndexError:
 	DEBUG = False
+
+@functools.lru_cache(maxsize=32)
+def cachedStringHash(i: str) -> str:
+	return hex(zlib.crc32(i.encode('utf8')))[2:]
+
+@functools.lru_cache(maxsize=16)
+def cachedDownload(url: str) -> bytes:
+	if not os.path.exists('./cache'):
+		os.makedirs('./cache')
+		
+	cache_file = './cache/{0}.pdc'.format(cachedStringHash(url))
+		
+	if not os.path.isfile(cache_file):
+		response = urllib.request.urlopen(url)
+		data = response.read()
+		
+		with open(cache_file, 'wb') as cache_output:
+			cache_output.write(data)
+			
+	with open(cache_file, 'rb') as cache_input:
+		return cache_input.read()
 
 class ThreadMappedObject(object):
 	__POOL_TYPE = 'multiprocessing'
@@ -71,10 +95,7 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 		
 		crand = ThreadedModPseudoRandRestrictedRand()
 		data = [
-			token_bytes(self.__table_size),
-			os.urandom(self.__table_size),
-			crand.random(self.__table_size),
-			os.urandom(1) + b'\x00' * self.__table_size
+			cachedDownload(TRAINING_DATA_URL)
 		]
 		
 		for x in data:
