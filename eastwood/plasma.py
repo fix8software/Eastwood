@@ -72,7 +72,25 @@ class ThreadMappedObject(object):
 		
 		return object.__new__(cls)
 
-class _BZip2ParallelCompressionInterface(ThreadMappedObject):
+class ProcessMappedObject(object):
+	__POOL_TYPE = 'concurrent.futures'
+	__THREAD_COUNT = cpu_count() * 2
+
+	def __init__(self):
+		super().__init__()
+
+	def __new__(cls, *args, **kwargs):
+		if cls.__POOL_TYPE == 'concurrent.futures':
+			cls.__GLOBAL_POOL = ProcessPoolExecutor(max_workers = cls.__THREAD_COUNT)
+			cls.Σ = cls.__GLOBAL_POOL.map
+		elif cls.__POOL_TYPE == 'multiprocessing':
+			cls.__GLOBAL_POOL = Pool(cls.__THREAD_COUNT)
+			cls.Σ = cls.__GLOBAL_POOL.imap
+		cls.θ = cls.__THREAD_COUNT
+		
+		return object.__new__(cls)
+
+class _BZip2ParallelCompressionInterface(ProcessMappedObject):
 	# bzip2 attributes
 	__MAX_LEVEL = 9
 	__MIN_LEVEL = 1
@@ -161,13 +179,7 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 	def __p_compress(self, input: bytes, level: int) -> bytes:
 		x = self.__chunks(input, 98304 * level)
 		
-		self.cu_lev = level
-		return b''.join(self.Σ(self.__encapsulated_compression, list(x)))
-		
-	def __encapsulated_compression(self, raw: bytes) -> bytes:
-		capsule = bz2.compress(raw, self.cu_lev)
-
-		return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
+		return b''.join(self.Σ(encapsulated_byte_func, [(bz2.compress, self.__level_arguments(c, level)) for c in x]))
 		
 	@functools.lru_cache(maxsize=4)
 	def decompress(self, input: bytes) -> bytes:
@@ -209,6 +221,13 @@ class _BZip2ParallelCompressionInterface(ThreadMappedObject):
 	@staticmethod
 	def __int_out(i: bytes):
 		return int.from_bytes(i, byteorder=BYTE_ORDER)
+		
+	@staticmethod
+	def __level_arguments(chunk: bytes, level: int) -> tuple:
+		"""
+		Private function to automatically prepare arguments for internal compression.
+		"""
+		return (chunk, level)
 
 class _ZStandardParallelCompressionInterface(object):
 	# zstd attributes
@@ -587,6 +606,11 @@ class CryptoModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 class ThreadedModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 	def random(self, size: int = 1):
 		return b''.join(self.Σ(super().random, [math.ceil(size / self.θ) for _ in range(self.θ)]))[:size]
+		
+def encapsulated_byte_func(fargs: tuple) -> bytes:
+	capsule = fargs[0](*fargs[1])
+
+	return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 	
 if __name__ == '__main__':
 	# THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
