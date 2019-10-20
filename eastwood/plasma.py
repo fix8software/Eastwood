@@ -14,8 +14,8 @@ from threading import Thread
 from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
-import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys
-import urllib.request, mmh3, colorama, struct
+import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys, platform
+import urllib.request, mmh3, colorama, struct, re, psutil, uuid, json, socket
 from multiprocess import Pool as DillPool
 
 # These are the only classes that ought to be used with Plasma publicly.
@@ -56,6 +56,20 @@ def cachedDownload(url: str) -> bytes:
 			
 	with open(cache_file, 'rb') as cache_input:
 		return cache_input.read()
+
+@functools.lru_cache(maxsize=None)
+def getSystemInfo():
+	info={}
+	info['platform']=platform.system()
+	info['platform-release']=platform.release()
+	info['platform-version']=platform.version()
+	info['architecture']=platform.machine()
+	info['hostname']=socket.gethostname()
+	info['ip-address']=socket.gethostbyname(socket.gethostname())
+	info['mac-address']=':'.join(re.findall('..', '%012x' % uuid.getnode()))
+	info['processor']=platform.processor()
+	info['ram']=str(round(psutil.virtual_memory().total / (1024.0 **3)))+" GB"
+	return info
 
 class ThreadMappedObject(object):
 	__POOL_TYPE = 'multiprocessing'
@@ -181,6 +195,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 		startt = time.time()
 		result = self.__p_compress(input, flevel)
 		
+		msec = -1
 		if level < self.__MIN_LEVEL:
 			msec = ((time.time() - startt) * 1000)
 			
@@ -201,14 +216,23 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 				self.__global_level += 1
 		
 		self.last_level = flevel
-		
-		if len(result) > len(input):
-			meta = self.__int_in(0b00000000)
-			result = input
-		else:
-			meta = self.__int_in(0b00000001)
 			
-		final = meta + result
+		final = StaticKhaki.dumps({
+			'compressed': result,
+			
+			'exif': {
+				'compression_time'   : msec,
+				'compressed_at'      : startt,
+				'original_size'      : len(input),
+				'compressed_size'    : len(result),
+				'compression_level'  : flevel,
+				'specified_level'    : level,
+				'checksum'           : mmh3.hash(input),
+				'compressed_checksum': mmh3.hash(result),
+				'platform'           : getSystemInfo(),
+				'device_fingerprint' : mmh3.hash(StaticKhaki.dumps(list(platform.uname())))
+			}
+		})
 		
 		if self.cached:
 			if len(self.__compression_cache) >= self.__CACHE_SIZE:
@@ -236,10 +260,9 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 				return self.__decompression_cache[v_key]
 
 		startt = time.time()
-		if self.__int_out(input[:META_BYTES]) == 0b00000000:
-			return input[META_BYTES:]
-		else:
-			input = input[META_BYTES:]
+		decoded = StaticKhaki.loads(input)
+		
+		input = decoded['compressed']
 
 		chunks = []
 		while len(input) > 0:
@@ -680,7 +703,7 @@ class Khaki(object):
 		Turn any primitive data type into an array of bytes
 		"""
 	
-		return zlib.compress(self.to_bytes(i))
+		return zlib.compress(self.to_bytes(i), level = 1)
 		
 	def loads(self, i: bytes):
 		"""
@@ -705,36 +728,44 @@ class Khaki(object):
 		def bytesToInt(i: bytes):
 			return int.from_bytes(i, byteorder=BYTE_ORDER)
 
-	def to_bytes(self, i, vlen: int = 2) -> bytes:
-		output = bytes()
-		output += self.KhakiUtility.intToBytes(vlen)
-	
-		if   type(i) == dict:
-			output += self.KhakiUtility.intToBytes(0b00000000)
+	def to_bytes(self, i, vlen: int = 1) -> bytes:
+		ready = False
 		
-			for k, v in i.items():
-				key = self.to_bytes(k)
-				output += self.KhakiUtility.intToBytes(len(key), vlen) + key
-				value = self.to_bytes(v)
-				output += self.KhakiUtility.intToBytes(len(value), vlen) + value
-		elif type(i) == list:
-			output += self.KhakiUtility.intToBytes(0b00000001)
-		
-			for x in i:
-				value = self.to_bytes(x)
-				output += self.KhakiUtility.intToBytes(len(value), vlen) + value
-		elif type(i) == str:
-			output += self.KhakiUtility.intToBytes(0b00000010) + i.encode('utf8')
-		elif type(i) == int:
-			output += self.KhakiUtility.intToBytes(0b00000011) + struct.pack('q', i)
-		elif type(i) == float:
-			output += self.KhakiUtility.intToBytes(0b00000100) + struct.pack('d', i)
-		elif type(i) == bool:
-			output += self.KhakiUtility.intToBytes(0b00000101) + struct.pack('?', i)
-		elif type(i) == bytes:
-			output += self.KhakiUtility.intToBytes(0b00000110) + i
-		else:
-			raise KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
+		while ready == False:
+			try:
+				output = bytes()
+				output += self.KhakiUtility.intToBytes(vlen)
+			
+				if   type(i) == dict:
+					output += self.KhakiUtility.intToBytes(0b00000000)
+				
+					for k, v in i.items():
+						key = self.to_bytes(k)
+						output += self.KhakiUtility.intToBytes(len(key), vlen) + key
+						value = self.to_bytes(v)
+						output += self.KhakiUtility.intToBytes(len(value), vlen) + value
+				elif type(i) == list:
+					output += self.KhakiUtility.intToBytes(0b00000001)
+				
+					for x in i:
+						value = self.to_bytes(x)
+						output += self.KhakiUtility.intToBytes(len(value), vlen) + value
+				elif type(i) == str:
+					output += self.KhakiUtility.intToBytes(0b00000010) + i.encode('utf8')
+				elif type(i) == int:
+					output += self.KhakiUtility.intToBytes(0b00000011) + struct.pack('q', i)
+				elif type(i) == float:
+					output += self.KhakiUtility.intToBytes(0b00000100) + struct.pack('d', i)
+				elif type(i) == bool:
+					output += self.KhakiUtility.intToBytes(0b00000101) + struct.pack('?', i)
+				elif type(i) == bytes:
+					output += self.KhakiUtility.intToBytes(0b00000110) + i
+				else:
+					raise KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
+			except OverflowError:
+				vlen += 1
+			else:
+				ready = True
 			
 		return output
 		
@@ -781,14 +812,14 @@ class Khaki(object):
 			
 class StaticKhaki:
 	@staticmethod
-	def dumps(i) -> bytes:
+	def dumps(*args, **kwargs):
 		x = Khaki()
-		return x.dumps(i)
+		return x.dumps(*args, **kwargs)
 		
 	@staticmethod
-	def loads(i: bytes):
+	def loads(*args, **kwargs):
 		x = Khaki()
-		return x.loads(i)
+		return x.loads(*args, **kwargs)
 	
 if __name__ == '__main__':
 	# THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
