@@ -101,6 +101,7 @@ def encapsulated_byte_func(fargs: tuple) -> bytes:
 
 	return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 
+# Currentl ParallelCompressionInterface - Latest features
 class _GlobalParallelCompressionInterface(ProcessMappedObject):
 	# algo attributes
 	__MAX_LEVEL  = 9
@@ -279,6 +280,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 		"""
 		return (chunk, level)
 
+# OBSOLETED: Too slow.
 class _ZStandardParallelCompressionInterface(object):
 	# zstd attributes
 	__MAX_LEVEL = 22
@@ -365,6 +367,7 @@ class _ZStandardParallelCompressionInterface(object):
 	def decompress(self, input: bytes) -> bytes:
 		return self.decompressionObject.decompress(input)
 
+# OBSOLETED: Segfaulted, somehow
 class ParallelCompressionInterface(ThreadMappedObject):
 	# zstd attributes
 	__MAX_LEVEL = 22
@@ -463,14 +466,14 @@ class ParallelCompressionInterface(ThreadMappedObject):
 
 		if level < 1:
 			suggested = (lambda x,l,u: l if x<l else u if x>u else x)( # Check if within range
-				(lambda x,a,b,c,d: (x-a)/(b-a)*(d-c)+c)( # Map to range
-					len(input),
-					0,
-					self.__average_too_high_size,
-					self.__MAX_LEVEL,
-					self.__MIN_LEVEL
+				(lambda x,a,b,c,d: (x-a)/(b-a)*(d-c)+c)(               # Map to range
+					len(input),                                        # Input Length
+					0,                                                 # Min. Input Length
+					self.__average_too_high_size,                      # Max. Level Size
+					self.__MAX_LEVEL,                                  # Max. Level
+					self.__MIN_LEVEL                                   # Min. Level
 				),
-				self.__MIN_LEVEL,
+				self.__MIN_LEVEL,                                      # Wrap map result to min/max lvl
 				self.__MAX_LEVEL
 			)
 			level = int(round((self.__global_level + suggested) / 2))
