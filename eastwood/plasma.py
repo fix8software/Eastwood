@@ -422,7 +422,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             self.__decompression_cache[v_key] = result
                 
         # Use compression exif to determine if output is valid.
-        if decoded['exif']['checksum'] != mmh3.hash128(result):
+        if decoded['exif']['checksum'] != mmh3.hash(result):
             raise self.ChecksumFailureException('The decompressor has yielded invalid data! Check the integrity of your data stream.')
                 
         return result
