@@ -213,7 +213,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 		return final
 		
 	def __p_compress(self, input: bytes, level: int) -> bytes:
-		x = self.__chunks(input, 65536 * level)
+		x = self.__chunks(input, 131070 * level)
 		
 		return b''.join(self.Σ(encapsulated_byte_func, [(self.__engine.compress, self.__level_arguments(c, level)) for c in x]))
 		
