@@ -13,7 +13,6 @@ packet_names = [
 	# packet id # 0
 	# fields:
 	# 	per packet:
-	#		int: the order/index of the packet
 	#		uuid: the user/sender of the packet
 	#		bytes: the packet itself
 	("delete_conn", "upstream"),

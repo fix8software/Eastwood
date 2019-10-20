@@ -1,4 +1,3 @@
-from collections import defaultdict
 from quarry.net.protocol import BufferUnderrun
 from twisted.internet import reactor
 
@@ -52,42 +51,35 @@ class EWModule(Module):
 		"""
 		buff = self.protocol.buff_class(uncompressed_data) # Create buffer
 
-		unordered_data = {} # Holds packets by index
 		try:
 			while True: # Unpack data until a bufferunderrun
-				index = buff.unpack_varint()
 				uuid = buff.unpack_uuid()
 				packet = buff.unpack_packet(self.protocol.buff_class) # Packet is unpacked here as the subclass will just forward it
 				packet_name = packet.unpack_string()
 				packet.save()
-				unordered_data[index] = (uuid, packet_name, packet)
+
+				try:
+					client = self.protocol.other_factory.get_client(uuid) # Get client
+				except KeyError:
+					continue # The client has disconnected already, ignore
+
+				try: # Attempt to dispatch
+					new_packet = client.dispatch("_".join(("packet", "send", packet_name)), packet)
+				except BufferUnderrun:
+					client.logger.info("Packet is too short: {}".format(packet_name))
+					continue
+
+				# If nothing was returned, the packet should be sent as it was originally
+				if not new_packet:
+					new_packet = (packet_name, packet)
+
+				# Forward packet
+				if new_packet[1] != None: # If the buffer is none, it was explictly stated to not send the packet!
+					client.send_packet(new_packet[0], new_packet[1].buff)
 		except BufferUnderrun:
 			pass
 
 		buff.discard() # Discard when done
-
-		# Dispatch calls
-		for tup in sorted(unordered_data.items(), key=lambda kv: kv[0]):
-			uuid, packet_name, packet_data = tup[1]
-
-			try:
-				client = self.protocol.other_factory.get_client(uuid) # Get client
-			except KeyError:
-				continue # The client has disconnected already, ignore
-
-			try: # Attempt to dispatch
-				new_packet = client.dispatch("_".join(("packet", "send", packet_name)), packet_data)
-			except BufferUnderrun:
-				client.logger.info("Packet is too short: {}".format(packet_name))
-				continue
-
-			# If nothing was returned, the packet should be sent as it was originally
-			if not new_packet:
-				new_packet = (packet_name, packet_data)
-
-			# Forward packet
-			if new_packet[1] != None: # If the buffer is none, it was explictly stated to not send the packet!
-				client.send_packet(new_packet[0], new_packet[1].buff)
 
 class EWProtocol(BaseProtocol):
 	"""
@@ -243,21 +235,17 @@ class EWProtocol(BaseProtocol):
 		if len(self.factory.input_buffer) < 1: # Do not send empty packets
 			return
 
-		poem = defaultdict(bytes) # Use default dict to keep track of packet data by name
-
+		poem = []
 		for i in range(len(self.factory.input_buffer)): # Per packet info
 			uuid, packet_name, packet_data = self.factory.input_buffer.popleft()
 
 			# TODO: Pass the id instead of the string name to save bandwidth?
 			buff = self.buff_class.pack_string(packet_name) + packet_data.buff # Prepend packet name to buffer
 
-			poem[packet_name] = b"".join([poem[packet_name],
-									self.buff_class.pack_varint(i), # Pack index of packet
-									self.buff_class.pack_uuid(uuid), # Pack uuid of client
-									self.buff_class.pack_packet(buff) # Append buffer (as packet for length prefixing)
-									])
+			poem.append(self.buff_class.pack_uuid(uuid)) # Pack uuid of client
+			poem.append(self.buff_class.pack_packet(buff)) # Append buffer (as packet for length prefixing)
 
 			packet_data.discard() # Buffer is no longer needed
 
 		# Compress poem and send
-		self.dispatch("compress_and_send", b"".join(poem.values()))
+		self.dispatch("compress_and_send", b"".join(poem))
