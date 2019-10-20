@@ -107,7 +107,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 	# cache attributes
 	__CACHE_SIZE = 16
 	
-	def __init__(self, nodes: int = cpu_count(), cached: bool = False, target_speed_ms: int = 60, target_speed_buf: int = 5):
+	def __init__(self, nodes: int = cpu_count(), cached: bool = False, target_speed_ms: int = 35, target_speed_buf: int = 5):
 		self.cached = cached
 		
 		self.nodes = nodes
