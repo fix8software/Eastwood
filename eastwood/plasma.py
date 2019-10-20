@@ -15,7 +15,7 @@ from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
 import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys
-import urllib.request, mmh3, colorama
+import urllib.request, mmh3, colorama, struct
 from multiprocess import Pool as DillPool
 
 # These are the only classes that ought to be used with Plasma publicly.
@@ -669,6 +669,115 @@ class CryptoModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 class ThreadedModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 	def random(self, size: int = 1):
 		return b''.join(self.Σ(super().random, [math.ceil(size / self.θ) for _ in range(self.θ)]))[:size]
+	
+class Khaki(object):
+	"""
+	Universal lightweight format for encoding and decoding primitive data
+	"""
+
+	def dumps(self, i) -> bytes:
+		"""
+		Turn any primitive data type into an array of bytes
+		"""
+	
+		return zlib.compress(self.to_bytes(i))
+		
+	def loads(self, i: bytes):
+		"""
+		Reverse of Khaki.dumps()
+		
+		Turns bytes into Python data types
+		"""
+	
+		return self.from_bytes(zlib.decompress(i))
+
+	class KhakiUnknownTypeException(Exception):
+		pass
+		
+	class KhakiUtility(object):
+		META = 1
+	
+		@staticmethod
+		def intToBytes(i: int, s: int = META):
+			return i.to_bytes(s, byteorder=BYTE_ORDER)
+
+		@staticmethod
+		def bytesToInt(i: bytes):
+			return int.from_bytes(i, byteorder=BYTE_ORDER)
+
+	def to_bytes(self, i, vlen: int = 2) -> bytes:
+		output = bytes()
+		output += self.KhakiUtility.intToBytes(vlen)
+	
+		if   type(i) == dict:
+			output += self.KhakiUtility.intToBytes(0b00000000)
+		
+			for k, v in i.items():
+				key = self.to_bytes(k)
+				output += self.KhakiUtility.intToBytes(len(key), vlen) + key
+				value = self.to_bytes(v)
+				output += self.KhakiUtility.intToBytes(len(value), vlen) + value
+		elif type(i) == list:
+			output += self.KhakiUtility.intToBytes(0b00000001)
+		
+			for x in i:
+				value = self.to_bytes(x)
+				output += self.KhakiUtility.intToBytes(len(value), vlen) + value
+		elif type(i) == str:
+			output += self.KhakiUtility.intToBytes(0b00000010) + i.encode('utf8')
+		elif type(i) == int:
+			output += self.KhakiUtility.intToBytes(0b00000011) + struct.pack('q', i)
+		elif type(i) == float:
+			output += self.KhakiUtility.intToBytes(0b00000100) + struct.pack('d', i)
+		elif type(i) == bool:
+			output += self.KhakiUtility.intToBytes(0b00000101) + struct.pack('?', i)
+		elif type(i) == bytes:
+			output += self.KhakiUtility.intToBytes(0b00000110) + i
+		else:
+			raise KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
+			
+		return output
+		
+	def from_bytes(self, i: bytes):
+		meta = self.KhakiUtility.META
+		vlen = self.KhakiUtility.bytesToInt(i[:meta])
+		type = self.KhakiUtility.bytesToInt(i[meta:meta*2])
+		i = i[meta*2:]
+		
+		if   type == 0b00000110:
+			return i
+		elif type == 0b00000101:
+			return struct.unpack('?', i)[0]
+		elif type == 0b00000100:
+			return struct.unpack('d', i)[0]
+		elif type == 0b00000011:
+			return struct.unpack('q', i)[0]
+		elif type == 0b00000010:
+			return i.decode('utf8')
+		elif type == 0b00000001:
+			data = []
+		
+			while len(i) > 0:
+				size = self.KhakiUtility.bytesToInt(i[:vlen])
+				data.append(self.from_bytes(i[vlen:size+vlen]))
+				i = i[size+vlen:]
+			
+			return data
+		elif type == 0b00000000:
+			data = {}
+		
+			while len(i) > 0:
+				size = self.KhakiUtility.bytesToInt(i[:vlen])
+				key = self.from_bytes(i[vlen:size+vlen])
+				i = i[size+vlen:]
+				
+				size = self.KhakiUtility.bytesToInt(i[:vlen])
+				value = self.from_bytes(i[vlen:size+vlen])
+				i = i[size+vlen:]
+				
+				data[key] = value
+			
+			return data
 	
 if __name__ == '__main__':
 	# THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
