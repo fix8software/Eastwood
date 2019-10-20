@@ -124,6 +124,9 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 	# cache attributes
 	__CACHE_SIZE = 16
 	
+	class ChecksumFailureException(Exception):
+		pass
+	
 	def __init__(self, nodes: int = cpu_count(), cached: bool = False, target_speed_ms: int = 35, target_speed_buf: int = 5):
 		self.cached = cached
 		
@@ -227,12 +230,12 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 				'compressed_size'    : len(result),
 				'compression_level'  : flevel,
 				'specified_level'    : level,
-				'checksum'           : mmh3.hash(input),
-				'compressed_checksum': mmh3.hash(result),
+				'checksum'           : mmh3.hash128(input),
+				'compressed_checksum': mmh3.hash128(result),
 				'platform'           : getSystemInfo(),
-				'device_fingerprint' : mmh3.hash(StaticKhaki.dumps(list(platform.uname())))
+				'device_fingerprint' : mmh3.hash128(StaticKhaki.dumps(list(platform.uname())))
 			}
-		})
+		}, compressed = False)
 		
 		if self.cached:
 			if len(self.__compression_cache) >= self.__CACHE_SIZE:
@@ -252,6 +255,8 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 		Args:
 			input: Bytes to decompress - Note this is not compatible with the output of the standard compression function.
 		"""
+		
+		input_length = len(input)
 		
 		if self.cached:
 			v_key = mmh3.hash128(input)
@@ -274,12 +279,19 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 		msec = ((time.time() - startt) * 1000)
 		
 		if DEBUG:
-			print('[DEBUG] '+colorama.Fore.GREEN+colorama.Style.BRIGHT+'Decompress.'+colorama.Style.RESET_ALL+' Time: {0}ms'.format(str(round(msec, 1)).ljust(10)))
+			print('[DEBUG] '+colorama.Fore.GREEN+colorama.Style.BRIGHT+'Decompress.'+colorama.Style.RESET_ALL+' Time: {0}ms at level {1} ({2} times bigger )'.format(
+				str(round(msec, 1)).ljust(10),
+				str(decoded['exif']['compression_level']).ljust(4),
+				str(int(round(len(result) / input_length))).ljust(8)
+			))
 				
 		if self.cached:
 			if len(self.__decompression_cache) >= self.__CACHE_SIZE:
 				del self.__decompression_cache[list(self.__decompression_cache.keys())[0]]
 			self.__decompression_cache[v_key] = result
+				
+		if decoded['exif']['checksum'] != mmh3.hash128(result):
+			raise self.ChecksumFailureException('The decompressor has yielded invalid data! Check the integrity of your data stream.')
 				
 		return result
 		
@@ -698,12 +710,15 @@ class Khaki(object):
 	Universal lightweight format for encoding and decoding primitive data
 	"""
 
-	def dumps(self, i) -> bytes:
+	def dumps(self, i, compressed = True) -> bytes:
 		"""
 		Turn any primitive data type into an array of bytes
 		"""
 	
-		return zlib.compress(self.to_bytes(i), level = 1)
+		if compressed:
+			return struct.pack('<?', True ) + zlib.compress(self.to_bytes(i), level = 1)
+		else:
+			return struct.pack('<?', False) +               self.to_bytes(i)
 		
 	def loads(self, i: bytes):
 		"""
@@ -712,7 +727,12 @@ class Khaki(object):
 		Turns bytes into Python data types
 		"""
 	
-		return self.from_bytes(zlib.decompress(i))
+		compressed = struct.unpack('<?', i[:1])[0]
+	
+		if compressed:
+			return self.from_bytes(zlib.decompress(i[1:]))
+		else:
+			return self.from_bytes(i[1:])
 
 	class KhakiUnknownTypeException(Exception):
 		pass
@@ -722,11 +742,11 @@ class Khaki(object):
 	
 		@staticmethod
 		def intToBytes(i: int, s: int = META):
-			return i.to_bytes(s, byteorder=BYTE_ORDER)
+			return i.to_bytes(s, byteorder=BYTE_ORDER, signed = True)
 
 		@staticmethod
 		def bytesToInt(i: bytes):
-			return int.from_bytes(i, byteorder=BYTE_ORDER)
+			return int.from_bytes(i, byteorder=BYTE_ORDER, signed = True)
 
 	def to_bytes(self, i, vlen: int = 1) -> bytes:
 		ready = False
@@ -753,13 +773,21 @@ class Khaki(object):
 				elif type(i) == str:
 					output += self.KhakiUtility.intToBytes(0b00000010) + i.encode('utf8')
 				elif type(i) == int:
-					output += self.KhakiUtility.intToBytes(0b00000011) + struct.pack('q', i)
+					try:
+						output += self.KhakiUtility.intToBytes(0b00000011) + struct.pack('<q', i)
+					except struct.error:
+						try:
+							output += self.KhakiUtility.intToBytes(0b00001000) + self.KhakiUtility.intToBytes(i, 32)
+						except OverflowError:
+							output += self.KhakiUtility.intToBytes(0b00001001) + self.to_bytes(str(i))
 				elif type(i) == float:
-					output += self.KhakiUtility.intToBytes(0b00000100) + struct.pack('d', i)
+					output += self.KhakiUtility.intToBytes(0b00000100) + struct.pack('<d', i)
 				elif type(i) == bool:
-					output += self.KhakiUtility.intToBytes(0b00000101) + struct.pack('?', i)
+					output += self.KhakiUtility.intToBytes(0b00000101) + struct.pack('<?', i)
 				elif type(i) == bytes:
 					output += self.KhakiUtility.intToBytes(0b00000110) + i
+				elif type(i) == None:
+					output += self.KhakiUtility.intToBytes(0b00000111)
 				else:
 					raise KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
 			except OverflowError:
@@ -775,14 +803,20 @@ class Khaki(object):
 		type = self.KhakiUtility.bytesToInt(i[meta:meta*2])
 		i = i[meta*2:]
 		
-		if   type == 0b00000110:
+		if   type == 0b00001001:
+			return int(self.from_bytes(i))
+		elif type == 0b00001000:
+			return self.KhakiUtility.bytesToInt(i)
+		elif type == 0b00000111:
+			return None
+		elif type == 0b00000110:
 			return i
 		elif type == 0b00000101:
-			return struct.unpack('?', i)[0]
+			return struct.unpack('<?', i)[0]
 		elif type == 0b00000100:
-			return struct.unpack('d', i)[0]
+			return struct.unpack('<d', i)[0]
 		elif type == 0b00000011:
-			return struct.unpack('q', i)[0]
+			return struct.unpack('<q', i)[0]
 		elif type == 0b00000010:
 			return i.decode('utf8')
 		elif type == 0b00000001:
@@ -809,6 +843,8 @@ class Khaki(object):
 				data[key] = value
 			
 			return data
+		else:
+			raise KhakiUnknownTypeException('Cannot convert an invalid type value, data stream must be invalid.')
 			
 class StaticKhaki:
 	@staticmethod
