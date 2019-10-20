@@ -106,7 +106,7 @@ def getSystemInfo():
 
 class ThreadMappedObject(object):
     __POOL_TYPE = 'multiprocessing' # Multiprocessing seems fastest here.
-    __THREAD_COUNT = cpu_count() * 2 # Use twice as many threads as the core count for, apparently, good perf.
+    __THREAD_COUNT = cpu_count()    # Use twice as many threads as the core count for, apparently, good perf.
 
     def __init__(self):
         super().__init__()
@@ -129,7 +129,7 @@ class ThreadMappedObject(object):
 
 class ProcessMappedObject(object):
     __POOL_TYPE = 'multiprocessing'
-    __THREAD_COUNT = cpu_count() * 2
+    __THREAD_COUNT = cpu_count()
 
     def __init__(self):
         super().__init__()
@@ -184,7 +184,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
     
     def __init__(
             self,
-            nodes: int = cpu_count() * 2,   # Thread count.
+            nodes: int = cpu_count(),       # Thread count.
             cached: bool = False,           # Whether or not to cache requests.
             bz2chunk: bool = False,         # If true, split by block size. If false, split equally.
             target_speed_ms: int = 20,      # Maximum time it should take to compress anything.
