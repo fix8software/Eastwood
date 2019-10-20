@@ -159,10 +159,21 @@ def encapsulated_byte_func(fargs: tuple) -> bytes:
     # Here, the result is "encapsulated" by prepending its length.
     return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 
-# Currentl ParallelCompressionInterface - Latest features
+class ZStandardSimpleInterface(object):
+	@staticmethod
+	def compress(data: bytes, level: int = 1) -> bytes:
+		x = zstd.ZstdCompressor(level = level, threads = cpu_count())
+		return x.compress(data)
+		
+	@staticmethod
+	def decompress(data: bytes) -> bytes:
+		x = zstd.ZstdDecompressor()
+		return x.decompress(data)
+
+# Currently ParallelCompressionInterface - Latest features
 class _GlobalParallelCompressionInterface(ProcessMappedObject):
     # algo attributes
-    __MAX_LEVEL  = 9
+    __MAX_LEVEL  = 22
     __MIN_LEVEL  = 1
     
     # cache attributes
@@ -175,7 +186,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             self,
             nodes: int = cpu_count(),   # Thread count. Ought to be un-used.
             cached: bool = False,       # Whether or not to cache requests.
-            target_speed_ms: int = 35,  # Maximum time it should take to compress anything.
+            target_speed_ms: int = 20,  # Maximum time it should take to compress anything.
             target_speed_buf: int = 5   # When should PRIZMA start to raise the compression level?
         ):
         
@@ -190,7 +201,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         self.__table = {}
         
         # Compression engine. Works with bz2 OR zlib.
-        self.__engine = zlib
+        self.__engine = ZStandardSimpleInterface
         
         # Request caching. Optional.
         self.__compression_cache = {}
@@ -335,7 +346,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
     def __p_compress(self, input: bytes, level: int) -> bytes:
         # This is where parallel compression is finally performed.
         # First, break up the data into chunks roughly the size of the compression engine's block size at each level.
-        x = self.__chunks(input, 16384 * level)
+        x = self.__chunks(input, 32768 * level)
         
         # Then, create encapsulation arguments containing level, data and compression engine.
         # Then call the encapsulation function in the process pool.
