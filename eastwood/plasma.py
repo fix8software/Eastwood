@@ -221,7 +221,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         # Create the WAU table.
         self.create_level_table()
 
-    def create_level_table(self, size = 262144):
+    def create_level_table(self, size = 262144, low_size = 16384, max_size = 1048576):
         """
         This function creates everything a system called WAU needs to improve compression speed.
         
@@ -239,7 +239,15 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             cachedDownload(TRAINING_DATA_URL)[      :size  ],
             cachedDownload(TRAINING_DATA_URL)[size  :size*2],
             cachedDownload(TRAINING_DATA_URL)[size*2:size*3],
-            cachedDownload(TRAINING_DATA_URL)[size*3:size*4]
+            cachedDownload(TRAINING_DATA_URL)[size*3:size*4],
+            
+            # Low size tests to ensure the time per byte value is fair
+            cachedDownload(TRAINING_DATA_URL)[          :low_size  ],
+            cachedDownload(TRAINING_DATA_URL)[low_size  :low_size*2],
+            
+            # A few max size tests
+            cachedDownload(TRAINING_DATA_URL)[          :max_size  ],
+            cachedDownload(TRAINING_DATA_URL)[max_size  :max_size*2]
         ]
         
         for x in data:
