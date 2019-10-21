@@ -286,10 +286,11 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             cachedDownload(TRAINING_DATA_URL)[max_size*3:max_size*4],
         ]
     
-        cache_object_name = '{0} Compression Object Cache (Device: {1}, Fortnight Timestamp: {2}, Training Data: {3})'.format(
+        cache_object_name = '{0} Compression Object Cache (Device: {1}, Fortnight Timestamp: {2}, Compression Engine: {3}, Training Data: {4})'.format(
             type(self).__name__,           # Cache by compressor type
             self.fingerprint,              # Cache by device type
             round(time.time() / 1209600),  # Update cache every 14 days
+            type(self.__engine).__name__,  # Cache by compression engine
             mmh3.hash(                     # Cache by training data
                 StaticKhaki.dumps(
                     data,
