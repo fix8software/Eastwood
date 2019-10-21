@@ -286,7 +286,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             cachedDownload(TRAINING_DATA_URL)[max_size*3:max_size*4],
         ]
     
-        cache_object_name = '{0} Compression Object Cache (Device: {1}, Fortnight Timestamp: {2}, Compression Engine: {3}, Training Data: {4})'.format(
+        cache_object_name = '{0} Compression Object Cache (Device: {1}, Fortnight Timestamp: {2}, Compression Engine: {3}, Training Data: {4}, Min Level: {5}, Max Level: {6})'.format(
             type(self).__name__,           # Cache by compressor type
             self.fingerprint,              # Cache by device type
             round(time.time() / 1209600),  # Update cache every 14 days
@@ -298,7 +298,9 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
                     compressed = False,
                     min_value_length = 4
                 )
-            )
+            ),
+            self.__MIN_LEVEL,
+            self.__MAX_LEVEL
         )
     
         try:
