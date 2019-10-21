@@ -204,6 +204,16 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         self.__target_speed = target_speed_ms
         self.__target_buf = target_speed_buf
         
+        # Device fingerprint for exif and WAU cache
+        self.fingerprint = mmh3.hash(
+            StaticKhaki.dumps(
+                list(platform.uname()),
+                
+                compressed = False,
+                min_value_length = 4
+            )
+        )
+        
         # WAU/PRIZMA data
         self.__average_time = deque([0], maxlen=8192)
         self.__table = {}
@@ -255,7 +265,11 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         compression level based on the length of the data provided.
         """
     
-        cache_object_name = '{0} Compression Object Cache'.format(type(self).__name__)
+        cache_object_name = '{0} Compression Object Cache (Device: {1}, Fortnight Timestamp: {2})'.format(
+            type(self).__name__,           # Cache by compressor type
+            self.fingerprint,              # Cache by device type
+            round(time.time() / 1209600)   # Update cache every 14 days
+        )
     
         try:
             self.__table = self._get_cache(cache_object_name)
@@ -365,14 +379,6 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         self.last_level = flevel
             
         # Generate EXIF/ExIf (Extra Information), which can be used by the decompressor for debug or verification purposes.
-        fingerprint = mmh3.hash(
-            StaticKhaki.dumps(
-                list(platform.uname()),
-                
-                compressed = False,
-                min_value_length = 4
-            )
-        )
         
         if self.exifdata:
             exif = {
@@ -385,7 +391,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
                 'checksum'           : mmh3.hash(input),
                 'compressed_checksum': mmh3.hash(result),
                 'platform'           : getSystemInfo(),
-                'device_fingerprint' : fingerprint,
+                'device_fingerprint' : self.fingerprint,
                 'caching_enabled'    : self.cached
             }
         else:
