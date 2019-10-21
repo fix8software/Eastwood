@@ -187,6 +187,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             nodes: int = cpu_count(),       # Thread count.
             cached: bool = False,           # Whether or not to cache requests.
             bz2chunk: bool = False,         # If true, split by block size. If false, split equally.
+            exifdata: bool = False,         # If true, add extra information to compression payloads, e.g for calculating checksums.
             target_speed_ms: int = 20,      # Maximum time it should take to compress anything.
             target_speed_buf: int = 5       # When should PRIZMA start to raise the compression level?
         ):
@@ -195,6 +196,8 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         self.cached = cached
         self.nodes = nodes
         self.bz2chunk = bz2chunk
+        self.exifdata = exifdata
+        
         self.__target_speed = target_speed_ms
         self.__target_buf = target_speed_buf
         
@@ -327,10 +330,8 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             )
         )
         
-        final = StaticKhaki.dumps({
-            'compressed': result,
-            
-            'exif': {
+        if self.exifdata:
+            exif = {
                 'compression_time'   : msec,
                 'compressed_at'      : startt,
                 'original_size'      : len(input),
@@ -343,6 +344,13 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
                 'device_fingerprint' : fingerprint,
                 'caching_enabled'    : self.cached
             }
+        else:
+            exif = None
+        
+        final = StaticKhaki.dumps({
+            'compressed': result,
+            
+            'exif': exif
         }, compressed = False, min_value_length = 4)
         
         # If caching is enabled, cache this data.
@@ -415,7 +423,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         msec = ((time.time() - startt) * 1000) # The final time it took to decompress.
         
         # Again, more debug printing.
-        if DEBUG:
+        if DEBUG and decoded['exif'] is not None:
             print(
                 '[DEBUG] '+colorama.Fore.GREEN+colorama.Style.BRIGHT+'Decompress.'+colorama.Style.RESET_ALL+' Time: {0}ms at level {1} ({2} times bigger )'.format(
                     str(round(msec, 1)).ljust(10),
@@ -431,8 +439,9 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             self.__decompression_cache[v_key] = result
                 
         # Use compression exif to determine if output is valid.
-        if decoded['exif']['checksum'] != mmh3.hash(result):
-            raise self.ChecksumFailureException('The decompressor has yielded invalid data! Check the integrity of your data stream.')
+        if decoded['exif'] is not None:
+            if decoded['exif']['checksum'] != mmh3.hash(result):
+                raise self.ChecksumFailureException('The decompressor has yielded invalid data! Check the integrity of your data stream.')
                 
         return result
         
@@ -937,10 +946,10 @@ class Khaki(object):
                     output += self.KhakiUtility.intToBytes(0b00000101) + struct.pack('<?', i)
                 elif type(i) == bytes:
                     output += self.KhakiUtility.intToBytes(0b00000110) + i
-                elif type(i) == None:
+                elif i == None:
                     output += self.KhakiUtility.intToBytes(0b00000111)
                 else:
-                    raise KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
+                    raise self.KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
             except OverflowError:
                 vlen += 1
             else:
@@ -995,7 +1004,7 @@ class Khaki(object):
             
             return data
         else:
-            raise KhakiUnknownTypeException('Cannot convert an invalid type value, data stream must be invalid.')
+            raise self.KhakiUnknownTypeException('Cannot convert an invalid type value, data stream must be invalid.')
             
 class StaticKhaki:
     @staticmethod
