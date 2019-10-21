@@ -264,11 +264,40 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         Based on the data stored in the table this produces, WAU can automatically adjust the
         compression level based on the length of the data provided.
         """
+        
+        data = [
+            # Assuming a table size of 262144, this will perform tests on parts of the training data
+            # with a size of 262144 per test. In total, about 1 MiB of the data should be tested.
+            cachedDownload(TRAINING_DATA_URL)[      :size  ],
+            cachedDownload(TRAINING_DATA_URL)[size  :size*2],
+            cachedDownload(TRAINING_DATA_URL)[size*2:size*3],
+            cachedDownload(TRAINING_DATA_URL)[size*3:size*4],
+            
+            # Low size tests to ensure the time per byte value is fair
+            cachedDownload(TRAINING_DATA_URL)[          :low_size  ],
+            cachedDownload(TRAINING_DATA_URL)[low_size  :low_size*2],
+            cachedDownload(TRAINING_DATA_URL)[low_size*2:low_size*3],
+            cachedDownload(TRAINING_DATA_URL)[low_size*3:low_size*4],
+            
+            # A few max size tests
+            cachedDownload(TRAINING_DATA_URL)[          :max_size  ],
+            cachedDownload(TRAINING_DATA_URL)[max_size  :max_size*2],
+            cachedDownload(TRAINING_DATA_URL)[max_size*2:max_size*3],
+            cachedDownload(TRAINING_DATA_URL)[max_size*3:max_size*4],
+        ]
     
-        cache_object_name = '{0} Compression Object Cache (Device: {1}, Fortnight Timestamp: {2})'.format(
+        cache_object_name = '{0} Compression Object Cache (Device: {1}, Fortnight Timestamp: {2}, Training Data: {3})'.format(
             type(self).__name__,           # Cache by compressor type
             self.fingerprint,              # Cache by device type
-            round(time.time() / 1209600)   # Update cache every 14 days
+            round(time.time() / 1209600),  # Update cache every 14 days
+            mmh3.hash(                     # Cache by training data
+                StaticKhaki.dumps(
+                    data,
+                    
+                    compressed = False,
+                    min_value_length = 4
+                )
+            )
         )
     
         try:
@@ -276,24 +305,6 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         except self.CacheMiss:
             self.__table = {}
             self.__table_size = size
-            
-            crand = ThreadedModPseudoRandRestrictedRand()
-            data = [
-                # Assuming a table size of 262144, this will perform tests on parts of the training data
-                # with a size of 262144 per test. In total, about 1 MiB of the data should be tested.
-                cachedDownload(TRAINING_DATA_URL)[      :size  ],
-                cachedDownload(TRAINING_DATA_URL)[size  :size*2],
-                cachedDownload(TRAINING_DATA_URL)[size*2:size*3],
-                cachedDownload(TRAINING_DATA_URL)[size*3:size*4],
-                
-                # Low size tests to ensure the time per byte value is fair
-                cachedDownload(TRAINING_DATA_URL)[          :low_size  ],
-                cachedDownload(TRAINING_DATA_URL)[low_size  :low_size*2],
-                
-                # A few max size tests
-                cachedDownload(TRAINING_DATA_URL)[          :max_size  ],
-                cachedDownload(TRAINING_DATA_URL)[max_size  :max_size*2]
-            ]
             
             for x in data:
                 # This, for some reason, helps get a better result on
