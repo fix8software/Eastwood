@@ -181,6 +181,9 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
     
     class ChecksumFailureException(Exception):
         pass
+        
+    class CacheMiss(Exception):
+        pass
     
     def __init__(
             self,
@@ -221,6 +224,29 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         # Create the WAU table.
         self.create_level_table()
 
+    def _save_cache(self, element: str, data):
+        if not os.path.exists('./cache'): # Check for a cache directory.
+            os.makedirs('./cache')        # Make the cache directory if it doesn't exist already.
+            
+        cache_file = './cache/{0}.pdc'.format(cachedStringHash(element)) # Determine the file's in-cache name.
+            
+        with open(cache_file, 'wb') as cache_output: # Write it to the cache file. It will be read again,
+                                                     # hence the LRU cache, to prevent constant writing and
+                                                     # reading over and over again.
+            cache_output.write(StaticKhaki.dumps(data))
+            
+    def _get_cache(self, element: str):
+        if not os.path.exists('./cache'): # Check for a cache directory.
+            os.makedirs('./cache')        # Make the cache directory if it doesn't exist already.
+            
+        cache_file = './cache/{0}.pdc'.format(cachedStringHash(element)) # Determine the file's in-cache name.
+            
+        if not os.path.isfile(cache_file): # If it isn't in the cache, report it.
+            raise self.CacheMiss()
+            
+        with open(cache_file, 'rb') as cache_input: # And this is where the cache is re-read.
+            return StaticKhaki.loads(cache_input.read())
+
     def create_level_table(self, size = 262144, low_size = 16384, max_size = 1048576):
         """
         This function creates everything a system called WAU needs to improve compression speed.
@@ -229,46 +255,55 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         compression level based on the length of the data provided.
         """
     
-        self.__table = {}
-        self.__table_size = size
-        
-        crand = ThreadedModPseudoRandRestrictedRand()
-        data = [
-            # Assuming a table size of 262144, this will perform tests on parts of the training data
-            # with a size of 262144 per test. In total, about 1 MiB of the data should be tested.
-            cachedDownload(TRAINING_DATA_URL)[      :size  ],
-            cachedDownload(TRAINING_DATA_URL)[size  :size*2],
-            cachedDownload(TRAINING_DATA_URL)[size*2:size*3],
-            cachedDownload(TRAINING_DATA_URL)[size*3:size*4],
+        cache_object_name = '{0} Compression Object Cache'.format(type(self).__name__)
+    
+        try:
+            self.__table = self._get_cache(cache_object_name)
+        except self.CacheMiss:
+            self.__table = {}
+            self.__table_size = size
             
-            # Low size tests to ensure the time per byte value is fair
-            cachedDownload(TRAINING_DATA_URL)[          :low_size  ],
-            cachedDownload(TRAINING_DATA_URL)[low_size  :low_size*2],
+            crand = ThreadedModPseudoRandRestrictedRand()
+            data = [
+                # Assuming a table size of 262144, this will perform tests on parts of the training data
+                # with a size of 262144 per test. In total, about 1 MiB of the data should be tested.
+                cachedDownload(TRAINING_DATA_URL)[      :size  ],
+                cachedDownload(TRAINING_DATA_URL)[size  :size*2],
+                cachedDownload(TRAINING_DATA_URL)[size*2:size*3],
+                cachedDownload(TRAINING_DATA_URL)[size*3:size*4],
+                
+                # Low size tests to ensure the time per byte value is fair
+                cachedDownload(TRAINING_DATA_URL)[          :low_size  ],
+                cachedDownload(TRAINING_DATA_URL)[low_size  :low_size*2],
+                
+                # A few max size tests
+                cachedDownload(TRAINING_DATA_URL)[          :max_size  ],
+                cachedDownload(TRAINING_DATA_URL)[max_size  :max_size*2]
+            ]
             
-            # A few max size tests
-            cachedDownload(TRAINING_DATA_URL)[          :max_size  ],
-            cachedDownload(TRAINING_DATA_URL)[max_size  :max_size*2]
-        ]
-        
-        for x in data:
-            # This, for some reason, helps get a better result on
-            # the first level during the real task. ¯\_(ツ)_/¯
-            __ = self.compress(x, self.__MIN_LEVEL)
-        
-        # Generate values for each compression level.
-        for level in range(self.__MIN_LEVEL, self.__MAX_LEVEL + 1):
-            times = []
             for x in data:
-                for _ in range(2): # Perform twice for accuracy.
-                    s = time.time()
-                    __ = self.compress(x, level)
-                    t = time.time() - s
-                    times.append(t)
-            a = sum(times) / len(times)
-            timebyte = (a / self.__table_size) # Calculate the time per byte.
-        
-            self.__table[level] = (timebyte)
+                # This, for some reason, helps get a better result on
+                # the first level during the real task. ¯\_(ツ)_/¯
+                __ = self.compress(x, self.__MIN_LEVEL)
             
+            # Generate values for each compression level.
+            for level in range(self.__MIN_LEVEL, self.__MAX_LEVEL + 1):
+                times = []
+                for x in data:
+                    for _ in range(2): # Perform twice for accuracy.
+                        s = time.time()
+                        __ = self.compress(x, level)
+                        t = time.time() - s
+                        times.append(t)
+                a = sum(times) / len(times)
+                timebyte = (a / self.__table_size) # Calculate the time per byte.
+            
+                self.__table[level] = (timebyte)
+                
+            self._save_cache(cache_object_name, self.__table)
+        else:
+            pass
+                
         return self.__table
         
     def compress(self, input: bytes, level: int = -1):
