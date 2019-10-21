@@ -318,6 +318,15 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         self.last_level = flevel
             
         # Generate EXIF/ExIf (Extra Information), which can be used by the decompressor for debug or verification purposes.
+        fingerprint = mmh3.hash(
+            StaticKhaki.dumps(
+                list(platform.uname()),
+                
+                compressed = False,
+                min_value_length = 4
+            )
+        )
+        
         final = StaticKhaki.dumps({
             'compressed': result,
             
@@ -331,10 +340,10 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
                 'checksum'           : mmh3.hash(input),
                 'compressed_checksum': mmh3.hash(result),
                 'platform'           : getSystemInfo(),
-                'device_fingerprint' : mmh3.hash(StaticKhaki.dumps(list(platform.uname()))),
+                'device_fingerprint' : fingerprint,
                 'caching_enabled'    : self.cached
             }
-        }, compressed = False)
+        }, compressed = False, min_value_length = 4)
         
         # If caching is enabled, cache this data.
         if self.cached:
@@ -851,15 +860,15 @@ class Khaki(object):
     Universal lightweight format for encoding and decoding primitive data
     """
 
-    def dumps(self, i, compressed = True) -> bytes:
+    def dumps(self, i, compressed = True, min_value_length: int = 1) -> bytes:
         """
         Turn any primitive data type into an array of bytes
         """
     
         if compressed:
-            return struct.pack('<?', True ) + zlib.compress(self.to_bytes(i), level = 1)
+            return struct.pack('<?', True ) + zlib.compress(self.to_bytes(i, min_value_length), level = 1)
         else:
-            return struct.pack('<?', False) +               self.to_bytes(i)
+            return struct.pack('<?', False) +               self.to_bytes(i, min_value_length)
         
     def loads(self, i: bytes):
         """
@@ -889,9 +898,10 @@ class Khaki(object):
         def bytesToInt(i: bytes):
             return int.from_bytes(i, byteorder=BYTE_ORDER, signed = True)
 
-    def to_bytes(self, i, vlen: int = 1) -> bytes:
+    def to_bytes(self, i, starting_vlen: int = 1) -> bytes:
         ready = False
         
+        vlen = starting_vlen
         while ready == False:
             try:
                 output = bytes()
@@ -901,15 +911,15 @@ class Khaki(object):
                     output += self.KhakiUtility.intToBytes(0b00000000)
                 
                     for k, v in i.items():
-                        key = self.to_bytes(k)
+                        key = self.to_bytes(k, starting_vlen)
                         output += self.KhakiUtility.intToBytes(len(key), vlen) + key
-                        value = self.to_bytes(v)
+                        value = self.to_bytes(v, starting_vlen)
                         output += self.KhakiUtility.intToBytes(len(value), vlen) + value
                 elif type(i) == list:
                     output += self.KhakiUtility.intToBytes(0b00000001)
                 
                     for x in i:
-                        value = self.to_bytes(x)
+                        value = self.to_bytes(x, starting_vlen)
                         output += self.KhakiUtility.intToBytes(len(value), vlen) + value
                 elif type(i) == str:
                     output += self.KhakiUtility.intToBytes(0b00000010) + i.encode('utf8')
@@ -920,7 +930,7 @@ class Khaki(object):
                         try:
                             output += self.KhakiUtility.intToBytes(0b00001000) + self.KhakiUtility.intToBytes(i, 32)
                         except OverflowError:
-                            output += self.KhakiUtility.intToBytes(0b00001001) + self.to_bytes(str(i))
+                            output += self.KhakiUtility.intToBytes(0b00001001) + self.to_bytes(str(i), starting_vlen)
                 elif type(i) == float:
                     output += self.KhakiUtility.intToBytes(0b00000100) + struct.pack('<d', i)
                 elif type(i) == bool:
@@ -1057,4 +1067,7 @@ def _main():
 if __name__ == '__main__':
     import cProfile
     
-    cProfile.run('_main()', sort='tottime')
+    if DEBUG:
+        cProfile.run('_main()', sort='cumtime')
+    else:
+        _main()
