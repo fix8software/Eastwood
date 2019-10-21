@@ -277,6 +277,8 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             if v_key in self.__compression_cache.keys():
                 return self.__compression_cache[v_key] # Return it if it is.
     
+        startt = time.time() # Begin timing compression for PRIZMA.
+    
         # If the level is invalid, switch to auto.
         if level < self.__MIN_LEVEL:
             accept_level = self.__MIN_LEVEL
@@ -289,7 +291,6 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         else:
             flevel = level
     
-        startt = time.time() # Begin timing compression for PRIZMA.
         result = self.__p_compress(input, flevel) # Perform parallel compression here.
         
         msec = -1 # In case auto-level is off, set time to -1 for exif data.
