@@ -215,7 +215,12 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         )
         
         # WAU/PRIZMA data
-        self.__average_time = deque([0], maxlen=8192)
+        self.__average_time = deque([0], maxlen=8)
+        self.__trianed_average_too_high_sizes_max = 24
+        self.__training_times = 64
+        self.__trianed_average_too_high_sizes = deque([0], maxlen=self.__trianed_average_too_high_sizes_max)
+        self.__trianed_average_too_high_sizes_repeat = deque([0], maxlen=self.__trianed_average_too_high_sizes_max)
+        self.__compressions = 0
         self.__table = {}
         
         # Compression engine. Works with bz2 OR zlib.
@@ -233,6 +238,35 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         
         # Create the WAU table.
         self.create_level_table()
+        
+        self.__average_too_high_size_start = int( round ( ( self.__target_speed / 1000)  / self.__table[self.__MIN_LEVEL] ) )
+        self.__average_too_high_size = self.__average_too_high_size_start
+        
+        self.__threads = []
+
+        self.__threads.append(Thread(target=self.__jitter_training_reinitialization_thread))
+        self.__threads[-1].daemon = True
+        self.__threads[-1].start()
+
+    def __jitter_training_reinitialization_thread(self):
+        while True:
+            while self.__compressions < self.__training_times:
+                time.sleep(0.05)
+                
+            self.__compressions = 0
+            
+            self.__trianed_average_too_high_sizes_repeat.append(self.__average_too_high_size)
+            
+            if len(self.__trianed_average_too_high_sizes) >= self.__trianed_average_too_high_sizes_max:
+                components = {}
+                components['A'] = int( round( sum( self.__trianed_average_too_high_sizes ) / len( self.__trianed_average_too_high_sizes ) ) )
+                components['B'] = int( round( sum( self.__trianed_average_too_high_sizes_repeat ) / len( self.__trianed_average_too_high_sizes_repeat ) ) )
+                components['C'] = max( self.__trianed_average_too_high_sizes_repeat )
+            
+                self.__average_too_high_size = int( round( sum( list(components.values()) ) / len( list(components.values()) ) ) )
+            else:
+                self.__trianed_average_too_high_sizes.append(self.__average_too_high_size)
+                self.__average_too_high_size = self.__average_too_high_size_start
 
     def _save_cache(self, element: str, data):
         if not os.path.exists('./cache'): # Check for a cache directory.
@@ -357,10 +391,24 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             accept_level = self.__MIN_LEVEL
             for k, v in self.__table.items(): # WAU (length level system)
                                               # Move along table until appropriate level found.
-                if ((v * len(input)) * 1000) < self.__target_speed + self.__target_buf:
+                if ((v * len(input)) * 1000) < self.__target_speed:
                     accept_level = k
         
-            flevel = int(round((self.__global_level + accept_level) / 2)) # PRIZMA (global level system)
+            suggested = (lambda x,l,u: l if x<l else u if x>u else x)( # Check if within range
+                (lambda x,a,b,c,d: (x-a)/(b-a)*(d-c)+c)(               # Map to range
+                    len(input),                                        # Input Length
+                    0,                                                 # Min. Input Length
+                    self.__average_too_high_size,                      # Max. Level Size
+                    self.__MAX_LEVEL,                                  # Max. Level
+                    self.__MIN_LEVEL                                   # Min. Level
+                ),
+                self.__MIN_LEVEL,                                      # Wrap map result to min/max lvl
+                self.__MAX_LEVEL
+            )
+        
+            levels = (self.__global_level, accept_level, suggested)
+        
+            flevel = int( round( sum(levels) / len(levels) ) )
         else:
             flevel = level
     
@@ -386,10 +434,15 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 
             averaged = self.__average_time[-1]
             
-            if averaged > self.__target_speed and self.__global_level > self.__MIN_LEVEL:
-                self.__global_level -= 1
+            if averaged > self.__target_speed + self.__target_buf and self.__global_level > self.__MIN_LEVEL:
+                self.__global_level -= 0.5
             elif averaged < self.__target_speed - self.__target_buf and self.__global_level < self.__MAX_LEVEL:
-                self.__global_level += 1
+                self.__global_level += 0.5
+                
+            if msec > self.__target_speed + self.__target_buf:
+                self.__average_too_high_size = int(round((self.__average_too_high_size + len(input)) / 2))
+                
+            self.__compressions += 1
         
         # Expose the last level selected to exterior processes.
         self.last_level = flevel
@@ -1094,7 +1147,8 @@ def _main():
     n = x.random(512 * 1024)
     print((time.time() - st) * 1000)
     
-    data = os.urandom(512 * 1024)
+    data_size = 512 * 1024
+    data = os.urandom(data_size)
     st = time.time()
     x = ParallelCompressionInterface()
     print((time.time() - st) * 1000)
@@ -1115,6 +1169,16 @@ def _main():
         print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level) + ' - ' + str(len(a)))
     b = x.decompress(a)
     assert b == data
+
+    data = n
+    st = time.time()
+    x = ParallelCompressionInterface()
+    print((time.time() - st) * 1000)
+    for _ in range(128):
+        st = time.time()
+        a = x.compress(data[:random.randint(1, data_size)])
+        print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level) + ' - ' + str(len(a)))
+    b = x.decompress(a)
 
     x = _SingleThreadedAESCipher(os.urandom(8192))
     st = time.time()
