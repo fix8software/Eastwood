@@ -1,4 +1,4 @@
-# Eastwood ![GitHub commit activity](https://img.shields.io/github/commit-activity/w/smplite/Eastwood) ![GitHub last commit](https://img.shields.io/github/last-commit/smplite/Eastwood) ![GitHub](https://img.shields.io/github/license/smplite/Eastwood)
+# Eastwood ![GitHub last commit](https://img.shields.io/github/last-commit/smplite/Eastwood) ![GitHub](https://img.shields.io/github/license/smplite/Eastwood)
 
 Eastwood is a proxy system designed to allow for the modification and optimization of Minecraft network traffic.
 
