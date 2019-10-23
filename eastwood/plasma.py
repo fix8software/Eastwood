@@ -32,7 +32,7 @@ from secrets import token_bytes
 from collections import deque
 import zstandard as zstd
 import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys, platform
-import urllib.request, mmh3, colorama, struct, re, psutil, uuid, json, socket
+import urllib.request, mmh3, colorama, struct, re, psutil, uuid, json, socket, lzma
 from multiprocess import Pool as DillPool
 
 # These are the only classes that ought to be used with Plasma publicly.
@@ -166,6 +166,15 @@ class ZStandardSimpleInterface(object):
     def decompress(data: bytes) -> bytes:
         x = zstd.ZstdDecompressor()
         return x.decompress(data)
+        
+class LZMASimpleInterface(object):
+    @staticmethod
+    def compress(data: bytes, level: int = 1) -> bytes:
+        return lzma.compress(data, format = lzma.FORMAT_ALONE, preset = 1)
+        
+    @staticmethod
+    def decompress(data: bytes) -> bytes:
+        return lzma.decompress(data)
 
 class _GlobalParallelCompressionInterface(ProcessMappedObject):
     # algo attributes
@@ -185,7 +194,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             self,
             nodes: int = cpu_count(),       # Thread count.
             cached: bool = False,           # Whether or not to cache requests.
-            bz2chunk: bool = False,         # If true, split by block size. If false, split equally.
+            bz2chunk: bool = True,          # If true, split by block size. If false, split equally.
             exifdata: bool = False,         # If true, add extra information to compression payloads, e.g for calculating checksums.
             target_speed_ms: int = 60,      # Maximum time it should take to compress anything.
             target_speed_buf: int = 5       # When should PRIZMA start to raise the compression level?
@@ -481,7 +490,9 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         # This is where parallel compression is finally performed.
         # First, break up the data into chunks roughly the size of the compression engine's block size at each level.
         if self.bz2chunk:
-            x = self.__chunks(input, 32768 * level)
+            bbs = 98304
+            bs = (lambda x, y: y if x == 0 else x)(bbs * level, bbs)
+            x = self.__chunks(input, bs)
         else:
             x = self.__chunks(input, int(round(len(input) / self.nodes)))
         
@@ -879,7 +890,7 @@ def _main():
         colorama.init()
     globals()['DEBUG'] = True
     
-    TEST_DATA = os.urandom(1024 * 1024)
+    TEST_DATA = cachedDownload(TRAINING_DATA_URL)
     TEST_TIMES = 16
 
     compressor = ParallelCompressionInterface(exifdata = True, cached = False)
