@@ -170,7 +170,6 @@ class ZStandardSimpleInterface(object):
         x = zstd.ZstdDecompressor()
         return x.decompress(data)
 
-# Currently ParallelCompressionInterface - Latest features
 class _GlobalParallelCompressionInterface(ProcessMappedObject):
     # algo attributes
     __MAX_LEVEL  = 22
@@ -191,7 +190,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             cached: bool = False,           # Whether or not to cache requests.
             bz2chunk: bool = False,         # If true, split by block size. If false, split equally.
             exifdata: bool = False,         # If true, add extra information to compression payloads, e.g for calculating checksums.
-            target_speed_ms: int = 20,      # Maximum time it should take to compress anything.
+            target_speed_ms: int = 60,      # Maximum time it should take to compress anything.
             target_speed_buf: int = 5       # When should PRIZMA start to raise the compression level?
         ):
         
