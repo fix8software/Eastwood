@@ -1,23 +1,27 @@
 """
-P L A S M A
-
-Naphtha's library for parallel, timed operations such as Compression
-and Encryption.
-
-Exposes the following utilities:
-    - ParallelAESInterface - Fast AES encryption
-    - ParallelCompressionInterface - Fast AND efficient compression
-    - IteratedSaltedHash - Secure password hashing (You ought to use bcrypt though)
-    - Khaki - Lightweight data format
-    - StaticKhaki - Simpler interface to Khaki
+     $M%%$My,           P L A S M A
+     $F ]$L !M,          
+     $F ]$L,,,l@g,      Naphtha's library for parallel, timed operations such as Compression
+     $F ]@@@@@@@@@      and Encryption.
+gg,  $F    'llll$@  ,g,  
+@@@@,$F        l$@,%$$@ Contains additional utilities such as Khaki, which both help Plasma's
+@@llllL        j||lll$@ more traditional components operate, but also can be used outside the
+@@llll@W       #@llll$@ library for more creative purposes.
+@@ll@@F        |$@@ll$@ 
+@@@M $F        j$@"%@@@ Utils exposed:
+''`  $F        j$@  ''` ParallelAESInterface, ParallelCompressionInterface, IteratedSaltedHash
+     #@gggggggg@@@      Khaki, StaticKhaki, ThreadedModPseudoRandRestrictedRand
+       "*******f^^       
     
-Requirements:
-    psutil==5.6.3
-    zstandard==0.11.1
-    pycryptodome==3.9.0
-    mmh3==2.5.1
-    multiprocess==0.70.9
-    colorama==0.4.1
+                        Requirements:
+                            psutil==5.6.3
+                            zstandard==0.11.1
+                            pycryptodome==3.9.0
+                            mmh3==2.5.1
+                            multiprocess==0.70.9
+                            colorama==0.4.1
+                            
+                        https://lotte.link/ - https://keybase.io/naphtha
 """
 
 # All module imports
