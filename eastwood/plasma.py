@@ -114,16 +114,13 @@ class ThreadMappedObject(object):
     def __new__(cls, *args, **kwargs): # Using __new__ in case __init__ is not called.
         if cls.__POOL_TYPE == 'concurrent.futures':
             cls.__GLOBAL_POOL = ThreadPoolExecutor(max_workers = cls.__THREAD_COUNT)
-            cls.Σ = cls.__GLOBAL_POOL.map # Create a function "Σ" so that the child class can map iterables to
-                                          # the mutliprocessing pool.
-                                          # 
-                                          # No, I don't know why I decided to pick that function name.
-                                          # Yes, I know it's kind of bad practice.
-                                          # No, I don't care.
+            cls.ParallelSequenceMapper = cls.__GLOBAL_POOL.map 
+            # Create a function "ParallelSequenceMapper" so that the child class can map iterables to
+            # the mutliprocessing pool.
         elif cls.__POOL_TYPE == 'multiprocessing':
             cls.__GLOBAL_POOL = ThreadPool(cls.__THREAD_COUNT)
-            cls.Σ = cls.__GLOBAL_POOL.imap
-        cls.θ = cls.__THREAD_COUNT # θ represents the amount of threads spawned.
+            cls.ParallelSequenceMapper = cls.__GLOBAL_POOL.imap
+        cls.ParallelSequenceMapperPoolSize = cls.__THREAD_COUNT # ParallelSequenceMapperPoolSize represents the amount of threads spawned.
         
         return object.__new__(cls)
 
@@ -137,14 +134,14 @@ class ProcessMappedObject(object):
     def __new__(cls, *args, **kwargs):
         if cls.__POOL_TYPE == 'concurrent.futures':
             cls.__GLOBAL_POOL = ProcessPoolExecutor(max_workers = cls.__THREAD_COUNT)
-            cls.Σ = cls.__GLOBAL_POOL.map
+            cls.ParallelSequenceMapper = cls.__GLOBAL_POOL.map
         elif cls.__POOL_TYPE == 'multiprocessing':
             cls.__GLOBAL_POOL = Pool(cls.__THREAD_COUNT)
-            cls.Σ = cls.__GLOBAL_POOL.imap
+            cls.ParallelSequenceMapper = cls.__GLOBAL_POOL.imap
         elif cls.__POOL_TYPE == 'multiprocess': # Multiprocess uses dill instead of cPickle.
             cls.__GLOBAL_POOL = DillPool(cls.__THREAD_COUNT)
-            cls.Σ = cls.__GLOBAL_POOL.imap
-        cls.θ = cls.__THREAD_COUNT
+            cls.ParallelSequenceMapper = cls.__GLOBAL_POOL.imap
+        cls.ParallelSequenceMapperPoolSize = cls.__THREAD_COUNT
         
         return object.__new__(cls)
         
@@ -492,7 +489,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         # Then call the encapsulation function in the process pool.
         # Then join up the output to form a continuous string of bytes.
         return b''.join(
-            self.Σ(
+            self.ParallelSequenceMapper(
                 encapsulated_byte_func,
                 [
                     (
@@ -537,7 +534,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
             input = input[SIZE_BYTES+chunk_length:]
             
         # Parallel decompression is much easier than parallel compression, as we don't need to specify a level.
-        result = b''.join(self.Σ(self.__engine.decompress, chunks))
+        result = b''.join(self.ParallelSequenceMapper(self.__engine.decompress, chunks))
         msec = ((time.time() - startt) * 1000) # The final time it took to decompress.
         
         # Again, more debug printing.
@@ -636,8 +633,8 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
         Args:
             raw: Bytes to encrypt
         """
-        chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / self.θ)))))
-        chunks = self.Σ(self.__encapsulated_encryption, chunks)
+        chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / self.ParallelSequenceMapperPoolSize)))))
+        chunks = self.ParallelSequenceMapper(self.__encapsulated_encryption, chunks)
         return b''.join(chunks)
 
     def decrypt(self, enc: bytes) -> bytes:
@@ -652,7 +649,7 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
             chunks.append(enc[SIZE_BYTES:SIZE_BYTES+chunk_length])
             enc = enc[SIZE_BYTES+chunk_length:]
 
-        return b''.join(self.Σ(super().decrypt, chunks))
+        return b''.join(self.ParallelSequenceMapper(super().decrypt, chunks))
 
     @staticmethod
     def __chunks(l, n):
@@ -721,7 +718,7 @@ class CryptoModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
         
 class ThreadedModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
     def random(self, size: int = 1):
-        return b''.join(self.Σ(super().random, [math.ceil(size / self.θ) for _ in range(self.θ)]))[:size]
+        return b''.join(self.ParallelSequenceMapper(super().random, [math.ceil(size / self.ParallelSequenceMapperPoolSize) for _ in range(self.ParallelSequenceMapperPoolSize)]))[:size]
     
 class Khaki(object):
     """
