@@ -874,71 +874,21 @@ class StaticKhaki:
         return x.loads(*args, **kwargs)
     
 def _main():
-    # THIS IS THE BADLY WRITTEN SCRIPT USED FOR TESTING PLASMA.
-    # DON'T RUN THIS.
+    # Print compression time messages during test
+    if globals()['DEBUG'] == False:
+        colorama.init()
+    globals()['DEBUG'] = True
     
-    import sys
-    x = ThreadedModPseudoRandRestrictedRand()
+    TEST_DATA = os.urandom(1024 * 1024)
+    TEST_TIMES = 16
+
+    compressor = ParallelCompressionInterface(exifdata = True, cached = False)
+    for _ in range(TEST_TIMES):
+        COMPRESSED_TEST_DATA = compressor.compress(TEST_DATA)
+    for _ in range(TEST_TIMES):
+        DECOMPRESSED_TEST_DATA = compressor.decompress(COMPRESSED_TEST_DATA)
+        assert DECOMPRESSED_TEST_DATA == TEST_DATA
     
-    st = time.time()
-    n = x.random(512 * 1024)
-    print((time.time() - st) * 1000)
-    
-    data_size = 512 * 1024
-    data = os.urandom(data_size)
-    st = time.time()
-    x = ParallelCompressionInterface()
-    print((time.time() - st) * 1000)
-    for _ in range(8):
-        st = time.time()
-        a = x.compress(data)
-        print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level))
-    b = x.decompress(a)
-    assert b == data
-    
-    data = n
-    st = time.time()
-    x = ParallelCompressionInterface()
-    print((time.time() - st) * 1000)
-    for _ in range(8):
-        st = time.time()
-        a = x.compress(data)
-        print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level) + ' - ' + str(len(a)))
-    b = x.decompress(a)
-    assert b == data
-
-    data = n
-    st = time.time()
-    x = ParallelCompressionInterface()
-    print((time.time() - st) * 1000)
-    for _ in range(128):
-        st = time.time()
-        a = x.compress(data[:random.randint(1, data_size)])
-        print(str((time.time() - st) * 1000) + ' - ' + str(x.last_level) + ' - ' + str(len(a)))
-    b = x.decompress(a)
-
-    x = _SingleThreadedAESCipher(os.urandom(8192))
-    st = time.time()
-    a = x.encrypt(data)
-    print((time.time() - st) * 1000)
-    st = time.time()
-    b = x.decrypt(a)
-    print((time.time() - st) * 1000)
-    assert b == data
-
-    x = ParallelAESInterface(os.urandom(8192))
-    st = time.time()
-    a = x.encrypt(data)
-    print((time.time() - st) * 1000)
-    print((len(data) * (1 / (time.time() - st))) / 1024 / 1024)
-    st = time.time()
-    b = x.decrypt(a)
-    print((time.time() - st) * 1000)
-    assert b == data
-    print(len(a) - len(data))
-
-    x, y = IteratedSaltedHash(b'helloworld')
-    print(x)
     
 if __name__ == '__main__':
     import cProfile
