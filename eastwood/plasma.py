@@ -38,6 +38,7 @@ import zstandard as zstd
 import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys, platform
 import urllib.request, mmh3, colorama, struct, re, psutil, uuid, json, socket, lzma
 from multiprocess import Pool as DillPool
+import dill
 
 # These are the only classes that ought to be used with Plasma publicly.
 __all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki"]
@@ -172,18 +173,177 @@ class ZStandardSimpleInterface(object):
         x = zstd.ZstdDecompressor()
         return x.decompress(data)
 
+class Khaki(object):
+    """
+    Universal lightweight format for encoding and decoding primitive data
+    """
+
+    def dumps(self, i, compressed = True, min_value_length: int = 1) -> bytes:
+        """
+        Turn any primitive data type into an array of bytes
+        """
+    
+        if compressed:
+            return struct.pack('<?', True ) + zlib.compress(self.to_bytes(i, min_value_length), level = 1)
+        else:
+            return struct.pack('<?', False) +               self.to_bytes(i, min_value_length)
+        
+    def loads(self, i: bytes):
+        """
+        Reverse of Khaki.dumps()
+        
+        Turns bytes into Python data types
+        """
+    
+        compressed = struct.unpack('<?', i[:1])[0]
+    
+        if compressed:
+            return self.from_bytes(zlib.decompress(i[1:]))
+        else:
+            return self.from_bytes(i[1:])
+
+    class KhakiUnknownTypeException(Exception):
+        pass
+        
+    class KhakiUtility(object):
+        META = 1
+    
+        @staticmethod
+        def intToBytes(i: int, s: int = META):
+            return i.to_bytes(s, byteorder=BYTE_ORDER, signed = True)
+
+        @staticmethod
+        def bytesToInt(i: bytes):
+            return int.from_bytes(i, byteorder=BYTE_ORDER, signed = True)
+
+    def to_bytes(self, i, starting_vlen: int = 1) -> bytes:
+        ready = False
+        
+        vlen = starting_vlen
+        while ready == False:
+            try:
+                output = bytes()
+                output += self.KhakiUtility.intToBytes(vlen)
+            
+                if   type(i) == dict:
+                    output += self.KhakiUtility.intToBytes(0b00000000)
+                
+                    for k, v in i.items():
+                        key = self.to_bytes(k, starting_vlen)
+                        output += self.KhakiUtility.intToBytes(len(key), vlen) + key
+                        value = self.to_bytes(v, starting_vlen)
+                        output += self.KhakiUtility.intToBytes(len(value), vlen) + value
+                elif type(i) == list:
+                    output += self.KhakiUtility.intToBytes(0b00000001)
+                
+                    for x in i:
+                        value = self.to_bytes(x, starting_vlen)
+                        output += self.KhakiUtility.intToBytes(len(value), vlen) + value
+                elif type(i) == str:
+                    output += self.KhakiUtility.intToBytes(0b00000010) + i.encode('utf8')
+                elif type(i) == int:
+                    try:
+                        output += self.KhakiUtility.intToBytes(0b00000011) + struct.pack('<q', i)
+                    except struct.error:
+                        try:
+                            output += self.KhakiUtility.intToBytes(0b00001000) + self.KhakiUtility.intToBytes(i, 32)
+                        except OverflowError:
+                            output += self.KhakiUtility.intToBytes(0b00001001) + self.to_bytes(str(i), starting_vlen)
+                elif type(i) == float:
+                    output += self.KhakiUtility.intToBytes(0b00000100) + struct.pack('<d', i)
+                elif type(i) == bool:
+                    output += self.KhakiUtility.intToBytes(0b00000101) + struct.pack('<?', i)
+                elif type(i) == bytes:
+                    output += self.KhakiUtility.intToBytes(0b00000110) + i
+                elif i == None:
+                    output += self.KhakiUtility.intToBytes(0b00000111)
+                else:
+                    raise self.KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
+            except OverflowError:
+                vlen += 1
+            else:
+                ready = True
+            
+        return output
+        
+    def from_bytes(self, i: bytes):
+        meta = self.KhakiUtility.META
+        vlen = self.KhakiUtility.bytesToInt(i[:meta])
+        type = self.KhakiUtility.bytesToInt(i[meta:meta*2])
+        i = i[meta*2:]
+        
+        if   type == 0b00001001:
+            return int(self.from_bytes(i))
+        elif type == 0b00001000:
+            return self.KhakiUtility.bytesToInt(i)
+        elif type == 0b00000111:
+            return None
+        elif type == 0b00000110:
+            return i
+        elif type == 0b00000101:
+            return struct.unpack('<?', i)[0]
+        elif type == 0b00000100:
+            return struct.unpack('<d', i)[0]
+        elif type == 0b00000011:
+            return struct.unpack('<q', i)[0]
+        elif type == 0b00000010:
+            return i.decode('utf8')
+        elif type == 0b00000001:
+            data = []
+        
+            while len(i) > 0:
+                size = self.KhakiUtility.bytesToInt(i[:vlen])
+                data.append(self.from_bytes(i[vlen:size+vlen]))
+                i = i[size+vlen:]
+            
+            return data
+        elif type == 0b00000000:
+            data = {}
+        
+            while len(i) > 0:
+                size = self.KhakiUtility.bytesToInt(i[:vlen])
+                key = self.from_bytes(i[vlen:size+vlen])
+                i = i[size+vlen:]
+                
+                size = self.KhakiUtility.bytesToInt(i[:vlen])
+                value = self.from_bytes(i[vlen:size+vlen])
+                i = i[size+vlen:]
+                
+                data[key] = value
+            
+            return data
+        else:
+            raise self.KhakiUnknownTypeException('Cannot convert an invalid type value, data stream must be invalid.')
+            
+class StaticKhaki:
+    @staticmethod
+    def dumps(*args, **kwargs):
+        x = Khaki()
+        return x.dumps(*args, **kwargs)
+        
+    @staticmethod
+    def loads(*args, **kwargs):
+        x = Khaki()
+        return x.loads(*args, **kwargs)
+
 ZSTD_TRAINING_POOL = cachedDownload(TRAINING_DATA_URL) + cachedDownload(ALT_TRAINING_DATA_URL)
-TRAINED_DICTIONARY = zstd.ZstdCompressionDict(ZSTD_TRAINING_POOL[:8388608], dict_type=zstd.DICT_TYPE_RAWCONTENT)
+
+TRAINED_DICTIONARIES = {}
+for level in range(1, 23):
+    x = zstd.ZstdCompressionDict(ZSTD_TRAINING_POOL[:8388608], dict_type=zstd.DICT_TYPE_RAWCONTENT)
+    x.precompute_compress(level=level)
+    TRAINED_DICTIONARIES[level] = x
+
 class ZStandardTrainedSimpleInterface(object):
     @staticmethod
     def compress(data: bytes, level: int = 1) -> bytes:
-        x = zstd.ZstdCompressor(level = level, threads = cpu_count(), dict_data = TRAINED_DICTIONARY)
-        return x.compress(data)
+        x = zstd.ZstdCompressor(level = level, threads = cpu_count(), dict_data = TRAINED_DICTIONARIES[level])
+        return level.to_bytes(1, byteorder=BYTE_ORDER) + x.compress(data)
         
     @staticmethod
     def decompress(data: bytes) -> bytes:
-        x = zstd.ZstdDecompressor(dict_data = TRAINED_DICTIONARY)
-        return x.decompress(data)
+        x = zstd.ZstdDecompressor(dict_data = TRAINED_DICTIONARIES[int.from_bytes(data[:1], byteorder=BYTE_ORDER)])
+        return x.decompress(data[1:])
         
 class LZMASimpleInterface(object):
     @staticmethod
@@ -748,159 +908,6 @@ class CryptoModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
 class ThreadedModPseudoRandRestrictedRand(ModPseudoRandRestrictedRand):
     def random(self, size: int = 1):
         return b''.join(self.ParallelSequenceMapper(super().random, [math.ceil(size / self.ParallelSequenceMapperPoolSize) for _ in range(self.ParallelSequenceMapperPoolSize)]))[:size]
-    
-class Khaki(object):
-    """
-    Universal lightweight format for encoding and decoding primitive data
-    """
-
-    def dumps(self, i, compressed = True, min_value_length: int = 1) -> bytes:
-        """
-        Turn any primitive data type into an array of bytes
-        """
-    
-        if compressed:
-            return struct.pack('<?', True ) + zlib.compress(self.to_bytes(i, min_value_length), level = 1)
-        else:
-            return struct.pack('<?', False) +               self.to_bytes(i, min_value_length)
-        
-    def loads(self, i: bytes):
-        """
-        Reverse of Khaki.dumps()
-        
-        Turns bytes into Python data types
-        """
-    
-        compressed = struct.unpack('<?', i[:1])[0]
-    
-        if compressed:
-            return self.from_bytes(zlib.decompress(i[1:]))
-        else:
-            return self.from_bytes(i[1:])
-
-    class KhakiUnknownTypeException(Exception):
-        pass
-        
-    class KhakiUtility(object):
-        META = 1
-    
-        @staticmethod
-        def intToBytes(i: int, s: int = META):
-            return i.to_bytes(s, byteorder=BYTE_ORDER, signed = True)
-
-        @staticmethod
-        def bytesToInt(i: bytes):
-            return int.from_bytes(i, byteorder=BYTE_ORDER, signed = True)
-
-    def to_bytes(self, i, starting_vlen: int = 1) -> bytes:
-        ready = False
-        
-        vlen = starting_vlen
-        while ready == False:
-            try:
-                output = bytes()
-                output += self.KhakiUtility.intToBytes(vlen)
-            
-                if   type(i) == dict:
-                    output += self.KhakiUtility.intToBytes(0b00000000)
-                
-                    for k, v in i.items():
-                        key = self.to_bytes(k, starting_vlen)
-                        output += self.KhakiUtility.intToBytes(len(key), vlen) + key
-                        value = self.to_bytes(v, starting_vlen)
-                        output += self.KhakiUtility.intToBytes(len(value), vlen) + value
-                elif type(i) == list:
-                    output += self.KhakiUtility.intToBytes(0b00000001)
-                
-                    for x in i:
-                        value = self.to_bytes(x, starting_vlen)
-                        output += self.KhakiUtility.intToBytes(len(value), vlen) + value
-                elif type(i) == str:
-                    output += self.KhakiUtility.intToBytes(0b00000010) + i.encode('utf8')
-                elif type(i) == int:
-                    try:
-                        output += self.KhakiUtility.intToBytes(0b00000011) + struct.pack('<q', i)
-                    except struct.error:
-                        try:
-                            output += self.KhakiUtility.intToBytes(0b00001000) + self.KhakiUtility.intToBytes(i, 32)
-                        except OverflowError:
-                            output += self.KhakiUtility.intToBytes(0b00001001) + self.to_bytes(str(i), starting_vlen)
-                elif type(i) == float:
-                    output += self.KhakiUtility.intToBytes(0b00000100) + struct.pack('<d', i)
-                elif type(i) == bool:
-                    output += self.KhakiUtility.intToBytes(0b00000101) + struct.pack('<?', i)
-                elif type(i) == bytes:
-                    output += self.KhakiUtility.intToBytes(0b00000110) + i
-                elif i == None:
-                    output += self.KhakiUtility.intToBytes(0b00000111)
-                else:
-                    raise self.KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
-            except OverflowError:
-                vlen += 1
-            else:
-                ready = True
-            
-        return output
-        
-    def from_bytes(self, i: bytes):
-        meta = self.KhakiUtility.META
-        vlen = self.KhakiUtility.bytesToInt(i[:meta])
-        type = self.KhakiUtility.bytesToInt(i[meta:meta*2])
-        i = i[meta*2:]
-        
-        if   type == 0b00001001:
-            return int(self.from_bytes(i))
-        elif type == 0b00001000:
-            return self.KhakiUtility.bytesToInt(i)
-        elif type == 0b00000111:
-            return None
-        elif type == 0b00000110:
-            return i
-        elif type == 0b00000101:
-            return struct.unpack('<?', i)[0]
-        elif type == 0b00000100:
-            return struct.unpack('<d', i)[0]
-        elif type == 0b00000011:
-            return struct.unpack('<q', i)[0]
-        elif type == 0b00000010:
-            return i.decode('utf8')
-        elif type == 0b00000001:
-            data = []
-        
-            while len(i) > 0:
-                size = self.KhakiUtility.bytesToInt(i[:vlen])
-                data.append(self.from_bytes(i[vlen:size+vlen]))
-                i = i[size+vlen:]
-            
-            return data
-        elif type == 0b00000000:
-            data = {}
-        
-            while len(i) > 0:
-                size = self.KhakiUtility.bytesToInt(i[:vlen])
-                key = self.from_bytes(i[vlen:size+vlen])
-                i = i[size+vlen:]
-                
-                size = self.KhakiUtility.bytesToInt(i[:vlen])
-                value = self.from_bytes(i[vlen:size+vlen])
-                i = i[size+vlen:]
-                
-                data[key] = value
-            
-            return data
-        else:
-            raise self.KhakiUnknownTypeException('Cannot convert an invalid type value, data stream must be invalid.')
-            
-class StaticKhaki:
-    @staticmethod
-    def dumps(*args, **kwargs):
-        x = Khaki()
-        return x.dumps(*args, **kwargs)
-        
-    @staticmethod
-    def loads(*args, **kwargs):
-        x = Khaki()
-        return x.loads(*args, **kwargs)
     
 def _main():
     # Print compression time messages during test
