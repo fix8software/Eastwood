@@ -56,6 +56,7 @@ BYTE_ORDER = 'little'
 # By default, it uses around 8 MiB of Minecraft 1.14.4 packet captures.
 TRAINING_DATA_URL = 'https://github.com/smplite/Eastwood/raw/master/eastwood/testdata/large_packet_sample.bin'
 ALT_TRAINING_DATA_URL = 'https://github.com/smplite/Eastwood/raw/master/eastwood/testdata/packet_samples.bin'
+DIRECT_TRAINED_ZSTD = False
 
 # Everything important that you ought not to touch starts here.
 # ---------------------------------------------------------------------------------------------------------------
@@ -326,24 +327,25 @@ class StaticKhaki:
         x = Khaki()
         return x.loads(*args, **kwargs)
 
-ZSTD_TRAINING_POOL = cachedDownload(TRAINING_DATA_URL) + cachedDownload(ALT_TRAINING_DATA_URL)
+if DIRECT_TRAINED_ZSTD:
+    ZSTD_TRAINING_POOL = cachedDownload(TRAINING_DATA_URL) + cachedDownload(ALT_TRAINING_DATA_URL)
 
-TRAINED_DICTIONARIES = {}
-for level in range(1, 23):
-    x = zstd.ZstdCompressionDict(ZSTD_TRAINING_POOL[:8388608], dict_type=zstd.DICT_TYPE_RAWCONTENT)
-    x.precompute_compress(level=level)
-    TRAINED_DICTIONARIES[level] = x
+    TRAINED_DICTIONARIES = {}
+    for level in range(1, 23):
+        x = zstd.ZstdCompressionDict(ZSTD_TRAINING_POOL[:8388608], dict_type=zstd.DICT_TYPE_RAWCONTENT)
+        x.precompute_compress(level=level)
+        TRAINED_DICTIONARIES[level] = x
 
-class ZStandardTrainedSimpleInterface(object):
-    @staticmethod
-    def compress(data: bytes, level: int = 1) -> bytes:
-        x = zstd.ZstdCompressor(level = level, threads = cpu_count(), dict_data = TRAINED_DICTIONARIES[level])
-        return level.to_bytes(1, byteorder=BYTE_ORDER) + x.compress(data)
-        
-    @staticmethod
-    def decompress(data: bytes) -> bytes:
-        x = zstd.ZstdDecompressor(dict_data = TRAINED_DICTIONARIES[int.from_bytes(data[:1], byteorder=BYTE_ORDER)])
-        return x.decompress(data[1:])
+    class ZStandardTrainedSimpleInterface(object):
+        @staticmethod
+        def compress(data: bytes, level: int = 1) -> bytes:
+            x = zstd.ZstdCompressor(level = level, threads = cpu_count(), dict_data = TRAINED_DICTIONARIES[level])
+            return level.to_bytes(1, byteorder=BYTE_ORDER) + x.compress(data)
+            
+        @staticmethod
+        def decompress(data: bytes) -> bytes:
+            x = zstd.ZstdDecompressor(dict_data = TRAINED_DICTIONARIES[int.from_bytes(data[:1], byteorder=BYTE_ORDER)])
+            return x.decompress(data[1:])
         
 class LZMASimpleInterface(object):
     @staticmethod
@@ -407,7 +409,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         self.__table = {}
         
         # Compression engine. Works with bz2 OR zlib.
-        self.__engine = ZStandardTrainedSimpleInterface
+        self.__engine = ZStandardSimpleInterface
         
         # Request caching. Optional.
         self.__compression_cache = {}
