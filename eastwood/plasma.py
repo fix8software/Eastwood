@@ -54,6 +54,7 @@ BYTE_ORDER = 'little'
 # Training data to use with the compressor. Only downloaded once.
 # By default, it uses around 8 MiB of Minecraft 1.14.4 packet captures.
 TRAINING_DATA_URL = 'https://github.com/smplite/Eastwood/raw/master/eastwood/testdata/large_packet_sample.bin'
+ALT_TRAINING_DATA_URL = 'https://github.com/smplite/Eastwood/raw/master/eastwood/testdata/packet_samples.bin'
 
 # Everything important that you ought not to touch starts here.
 # ---------------------------------------------------------------------------------------------------------------
@@ -170,6 +171,19 @@ class ZStandardSimpleInterface(object):
     def decompress(data: bytes) -> bytes:
         x = zstd.ZstdDecompressor()
         return x.decompress(data)
+
+ZSTD_TRAINING_POOL = cachedDownload(TRAINING_DATA_URL) + cachedDownload(ALT_TRAINING_DATA_URL)
+TRAINED_DICTIONARY = zstd.ZstdCompressionDict(ZSTD_TRAINING_POOL[:8388608], dict_type=zstd.DICT_TYPE_RAWCONTENT)
+class ZStandardTrainedSimpleInterface(object):
+    @staticmethod
+    def compress(data: bytes, level: int = 1) -> bytes:
+        x = zstd.ZstdCompressor(level = level, threads = cpu_count(), dict_data = TRAINED_DICTIONARY)
+        return x.compress(data)
+        
+    @staticmethod
+    def decompress(data: bytes) -> bytes:
+        x = zstd.ZstdDecompressor(dict_data = TRAINED_DICTIONARY)
+        return x.decompress(data)
         
 class LZMASimpleInterface(object):
     @staticmethod
@@ -233,7 +247,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         self.__table = {}
         
         # Compression engine. Works with bz2 OR zlib.
-        self.__engine = ZStandardSimpleInterface
+        self.__engine = ZStandardTrainedSimpleInterface
         
         # Request caching. Optional.
         self.__compression_cache = {}
@@ -894,7 +908,8 @@ def _main():
         colorama.init()
     globals()['DEBUG'] = True
     
-    TEST_DATA = cachedDownload(TRAINING_DATA_URL)
+    # TEST_DATA = cachedDownload(TRAINING_DATA_URL)[131072:5872025]
+    TEST_DATA = cachedDownload(ALT_TRAINING_DATA_URL)
     TEST_TIMES = 16
 
     compressor = ParallelCompressionInterface(exifdata = True, cached = False)
