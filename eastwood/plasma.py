@@ -54,8 +54,8 @@ BYTE_ORDER = 'little'
 
 # Training data to use with the compressor. Only downloaded once.
 # By default, it uses around 8 MiB of Minecraft 1.14.4 packet captures.
-TRAINING_DATA_URL = 'https://github.com/smplite/Eastwood/raw/master/eastwood/testdata/large_packet_sample.bin'
-ALT_TRAINING_DATA_URL = 'https://github.com/smplite/Eastwood/raw/master/eastwood/testdata/packet_samples.bin'
+TRAINING_DATA_URL = 'https://github.com/fix8software/Eastwood/raw/master/eastwood/testdata/large_packet_sample.bin'
+ALT_TRAINING_DATA_URL = 'https://github.com/fix8software/Eastwood/raw/master/eastwood/testdata/packet_samples.bin'
 DIRECT_TRAINED_ZSTD = False
 
 # Everything important that you ought not to touch starts here.
