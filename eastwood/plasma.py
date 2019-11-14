@@ -42,7 +42,7 @@ import dill
 from typing import Dict, List
 
 # These are the only classes that ought to be used with Plasma publicly.
-__all__ = ["ParallelEncryptionInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki", "XOR", "Mursha27Fx43Fx2"]
+__all__ = ["ParallelEncryptionInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki", "XOR", "Mursha27Fx43Fx2", "XChaCha20_Poly1305_Mursha27Fx43Fx2", "AESCrypt_Mursha27Fx43Fx2_IV12_NI"]
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
