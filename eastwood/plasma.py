@@ -791,10 +791,18 @@ class _SymmetricEncryptionAlgorithm(object):
         self.key = self.__hash_iterations(key)
         
     @staticmethod
-    def __hash_iterations(b: bytes, i: int = 0xFFFF):
+    def __hash_iterations(a: bytes, i: int = 0x0027FFFF):
+        b = a
         for _ in range(i):
-            b = hashlib.sha256(b).digest()
-        return b
+            b = mmh3.hash_bytes(b)
+        
+        c = b
+        for _ in range(i):
+            c = mmh3.hash_bytes(c)
+        
+        f = hashlib.sha256(a + b + c).digest()
+        
+        return f
 
 class AESCrypt_KIF4_IV12_NI(_SymmetricEncryptionAlgorithm):
     __IV_SIZE = 12
