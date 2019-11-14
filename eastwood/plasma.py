@@ -782,7 +782,17 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 
 ParallelCompressionInterface = _GlobalParallelCompressionInterface
 
-class _SingleThreadedAESCipher(ThreadMappedObject):
+class _SymmetricEncryptionAlgorithm(object):
+    def __init__(self, key: bytes):
+        self.key = self.__hash_iterations(key)
+        
+    @staticmethod
+    def __hash_iterations(b: bytes, i: int = 0xFFFF):
+        for _ in range(i):
+            b = hashlib.sha256(b).digest()
+        return b
+
+class AESCrypt_KIF4_IV12_NI(_SymmetricEncryptionAlgorithm):
     __IV_SIZE = 12
     __MODE = AES.MODE_GCM
     __AES_NI = True
@@ -790,8 +800,6 @@ class _SingleThreadedAESCipher(ThreadMappedObject):
     """
     This class must not be used outside of the Plasma library.
     """
-    def __init__(self, key: bytes):
-        self.key = self.__hash_iterations(key)
 
     def encrypt(self, raw: bytes) -> bytes:
         iv = Random.new().read(self.__IV_SIZE)
@@ -803,18 +811,15 @@ class _SingleThreadedAESCipher(ThreadMappedObject):
         cipher = AES.new(self.key, self.__MODE, iv, use_aesni=self.__AES_NI)
         return cipher.decrypt(enc[self.__IV_SIZE:])
 
-    @staticmethod
-    def __hash_iterations(b: bytes, i: int = 0xFFFF):
-        for _ in range(i):
-            b = hashlib.sha256(b).digest()
-        return b
-
-class ParallelAESInterface(_SingleThreadedAESCipher):
+class ParallelEncryptionInterface(ThreadMappedObject):
     """
     Non-threadsafe class that automatically spawns processes for continued use.
     """
+    def __init__(self, key: bytes, algorithm = AESCrypt_KIF4_IV12_NI):
+        self.algorithm = algorithm(key)
+    
     def __encapsulated_encryption(self, raw: bytes) -> bytes:
-        capsule = super().encrypt(raw)
+        capsule = self.algorithm.encrypt(raw)
 
         return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
 
@@ -840,7 +845,7 @@ class ParallelAESInterface(_SingleThreadedAESCipher):
             chunks.append(enc[SIZE_BYTES:SIZE_BYTES+chunk_length])
             enc = enc[SIZE_BYTES+chunk_length:]
 
-        return b''.join(self.ParallelSequenceMapper(super().decrypt, chunks))
+        return b''.join(self.ParallelSequenceMapper(self.algorithm.decrypt, chunks))
 
     @staticmethod
     def __chunks(l, n):
@@ -927,7 +932,10 @@ def _main():
     for _ in range(TEST_TIMES):
         DECOMPRESSED_TEST_DATA = compressor.decompress(COMPRESSED_TEST_DATA)
         assert DECOMPRESSED_TEST_DATA == TEST_DATA
-    
+        
+    EncIntf = ParallelEncryptionInterface(TEST_DATA)
+    A = EncIntf.encrypt(TEST_DATA)
+    assert EncIntf.decrypt(A) == TEST_DATA
     
 if __name__ == '__main__':
     import cProfile
