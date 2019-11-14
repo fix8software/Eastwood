@@ -39,9 +39,10 @@ import zlib, time, os, hashlib, random, math, copy, bz2, functools, sys, platfor
 import urllib.request, mmh3, colorama, struct, re, psutil, uuid, json, socket, lzma
 from multiprocess import Pool as DillPool
 import dill
+from typing import Dict, List
 
 # These are the only classes that ought to be used with Plasma publicly.
-__all__ = ["ParallelAESInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki"]
+__all__ = ["ParallelEncryptionInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki", "XOR", "Mursha27Fx43Fx2"]
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
@@ -782,36 +783,47 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 
 ParallelCompressionInterface = _GlobalParallelCompressionInterface
 
+def XOR(*args: List[bytes]) -> bytes:
+    args = list(args)
+    target_length = max(map(len, args))
+    
+    final = [0 for _ in range(target_length)]
+    for k, v in enumerate(args):
+        args[k] = (v * (target_length//len(v) + 1))[:target_length]
+        for x, z in enumerate(args[k]):
+            final[x] ^= z
+            
+    return bytes(final)
+    
+def Mursha27Fx43Fx2(a: bytes, i: int = 0x0027FFFF, fi: int = 0x03FF):
+    """
+    Mursha27Fx43Fx2
+    
+    Hybrid of multiple iterations of Murmurhash3 and SHA256
+    to calculate encryption keys.
+    """
+
+    b = XOR(a, mmh3.hash_bytes(a))
+    for _ in range(i):
+        b = mmh3.hash_bytes(b)
+    
+    c = XOR(b, mmh3.hash_bytes(b + a))
+    for _ in range(i):
+        c = mmh3.hash_bytes(c)
+    
+    f = XOR(c, mmh3.hash_bytes(c + b + a))
+    for _ in range(fi):
+        f = hashlib.sha256(f + a + b + c).digest()
+    
+    return f
+        
 class _SymmetricEncryptionAlgorithm(object):
     """
     This class must not be used outside of the Plasma library.
     """
 
     def __init__(self, key: bytes):
-        self.key = self.__hash_iterations(key)
-        
-    @staticmethod
-    def __hash_iterations(a: bytes, i: int = 0x0027FFFF, fi: int = 0x03FF):
-        """
-        Mursha27Fx43Fx2
-        
-        Hybrid of multiple iterations of Murmurhash3 and SHA256
-        to calculate encryption keys.
-        """
-        
-        b = a
-        for _ in range(i):
-            b = mmh3.hash_bytes(b)
-        
-        c = b
-        for _ in range(i):
-            c = mmh3.hash_bytes(c)
-        
-        f = c
-        for _ in range(fi):
-            f = hashlib.sha256(f + a + b + c).digest()
-        
-        return f
+        self.key = Mursha27Fx43Fx2(key)
 
 class AESCrypt_Mursha27Fx43Fx2_IV12_NI(_SymmetricEncryptionAlgorithm):
     __IV_SIZE = 12
@@ -950,7 +962,6 @@ def _main():
         colorama.init()
     globals()['DEBUG'] = True
     
-    # TEST_DATA = cachedDownload(TRAINING_DATA_URL)[131072:5872025]
     TEST_DATA = cachedDownload(ALT_TRAINING_DATA_URL)
     TEST_TIMES = 16
 
@@ -964,6 +975,8 @@ def _main():
     EncIntf = ParallelEncryptionInterface(TEST_DATA, algorithm = XChaCha20_Poly1305_Mursha27Fx43Fx2)
     A = EncIntf.encrypt(TEST_DATA)
     assert EncIntf.decrypt(A) == TEST_DATA
+    
+    print(XOR(b'exif', b'oxiffskgjwlgafsg'))
     
 if __name__ == '__main__':
     import cProfile
