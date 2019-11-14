@@ -791,9 +791,9 @@ class _SymmetricEncryptionAlgorithm(object):
         self.key = self.__hash_iterations(key)
         
     @staticmethod
-    def __hash_iterations(a: bytes, i: int = 0x0027FFFF):
+    def __hash_iterations(a: bytes, i: int = 0x0027FFFF, fi: int = 0x03FF):
         """
-        Mursha27Fx4
+        Mursha27Fx43Fx2
         
         Hybrid of multiple iterations of Murmurhash3 and SHA256
         to calculate encryption keys.
@@ -807,11 +807,13 @@ class _SymmetricEncryptionAlgorithm(object):
         for _ in range(i):
             c = mmh3.hash_bytes(c)
         
-        f = hashlib.sha256(a + b + c).digest()
+        f = c
+        for _ in range(fi):
+            f = hashlib.sha256(f + a + b + c).digest()
         
         return f
 
-class AESCrypt_Mursha27Fx4_IV12_NI(_SymmetricEncryptionAlgorithm):
+class AESCrypt_Mursha27Fx43Fx2_IV12_NI(_SymmetricEncryptionAlgorithm):
     __IV_SIZE = 12
     __MODE = AES.MODE_GCM
     __AES_NI = True
@@ -826,7 +828,7 @@ class AESCrypt_Mursha27Fx4_IV12_NI(_SymmetricEncryptionAlgorithm):
         cipher = AES.new(self.key, self.__MODE, iv, use_aesni=self.__AES_NI)
         return cipher.decrypt(enc[self.__IV_SIZE:])
 
-class XChaCha20_Poly1305_Mursha27Fx4(_SymmetricEncryptionAlgorithm):
+class XChaCha20_Poly1305_Mursha27Fx43Fx2(_SymmetricEncryptionAlgorithm):
     def encrypt(self, raw: bytes) -> bytes:
         iv = Random.new().read(24)
         cipher = ChaCha20_Poly1305.new(key = self.key, nonce = iv)
@@ -841,7 +843,7 @@ class ParallelEncryptionInterface(ThreadMappedObject):
     """
     Non-threadsafe class that automatically spawns processes for continued use.
     """
-    def __init__(self, key: bytes, algorithm = AESCrypt_Mursha27Fx4_IV12_NI):
+    def __init__(self, key: bytes, algorithm = AESCrypt_Mursha27Fx43Fx2_IV12_NI):
         self.algorithm = algorithm(key)
     
     def __encapsulated_encryption(self, raw: bytes) -> bytes:
@@ -959,7 +961,7 @@ def _main():
         DECOMPRESSED_TEST_DATA = compressor.decompress(COMPRESSED_TEST_DATA)
         assert DECOMPRESSED_TEST_DATA == TEST_DATA
         
-    EncIntf = ParallelEncryptionInterface(TEST_DATA, algorithm = XChaCha20_Poly1305_Mursha27Fx4)
+    EncIntf = ParallelEncryptionInterface(TEST_DATA, algorithm = XChaCha20_Poly1305_Mursha27Fx43Fx2)
     A = EncIntf.encrypt(TEST_DATA)
     assert EncIntf.decrypt(A) == TEST_DATA
     
