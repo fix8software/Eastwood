@@ -26,7 +26,7 @@ gg,  $F    'llll$@  ,g,
 
 # All module imports
 from Crypto import Random
-from Crypto.Cipher import AES
+from Crypto.Cipher import AES, ChaCha20_Poly1305
 from psutil import cpu_count
 from multiprocessing.pool import ThreadPool
 from multiprocessing import Pool
@@ -783,6 +783,10 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
 ParallelCompressionInterface = _GlobalParallelCompressionInterface
 
 class _SymmetricEncryptionAlgorithm(object):
+    """
+    This class must not be used outside of the Plasma library.
+    """
+
     def __init__(self, key: bytes):
         self.key = self.__hash_iterations(key)
         
@@ -797,10 +801,6 @@ class AESCrypt_KIF4_IV12_NI(_SymmetricEncryptionAlgorithm):
     __MODE = AES.MODE_GCM
     __AES_NI = True
 
-    """
-    This class must not be used outside of the Plasma library.
-    """
-
     def encrypt(self, raw: bytes) -> bytes:
         iv = Random.new().read(self.__IV_SIZE)
         cipher = AES.new(self.key, self.__MODE, iv, use_aesni=self.__AES_NI)
@@ -810,6 +810,17 @@ class AESCrypt_KIF4_IV12_NI(_SymmetricEncryptionAlgorithm):
         iv = enc[:self.__IV_SIZE]
         cipher = AES.new(self.key, self.__MODE, iv, use_aesni=self.__AES_NI)
         return cipher.decrypt(enc[self.__IV_SIZE:])
+
+class XChaCha20_Poly1305_KIF4(_SymmetricEncryptionAlgorithm):
+    def encrypt(self, raw: bytes) -> bytes:
+        iv = Random.new().read(24)
+        cipher = ChaCha20_Poly1305.new(key = self.key, nonce = iv)
+        return iv + cipher.encrypt(raw)
+
+    def decrypt(self, enc: bytes) -> bytes:
+        iv = enc[:24]
+        cipher = ChaCha20_Poly1305.new(key = self.key, nonce = iv)
+        return cipher.decrypt(enc[24:])
 
 class ParallelEncryptionInterface(ThreadMappedObject):
     """
@@ -933,7 +944,7 @@ def _main():
         DECOMPRESSED_TEST_DATA = compressor.decompress(COMPRESSED_TEST_DATA)
         assert DECOMPRESSED_TEST_DATA == TEST_DATA
         
-    EncIntf = ParallelEncryptionInterface(TEST_DATA)
+    EncIntf = ParallelEncryptionInterface(TEST_DATA, algorithm = XChaCha20_Poly1305_KIF4)
     A = EncIntf.encrypt(TEST_DATA)
     assert EncIntf.decrypt(A) == TEST_DATA
     
