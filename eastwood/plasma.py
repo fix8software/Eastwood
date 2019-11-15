@@ -485,6 +485,9 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         compression level based on the length of the data provided.
         """
         
+        o = self.cached
+        self.cached = False
+        
         data = [
             # Assuming a table size of 262144, this will perform tests on parts of the training data
             # with a size of 262144 per test. In total, about 1 MiB of the data should be tested.
@@ -554,6 +557,7 @@ class _GlobalParallelCompressionInterface(ProcessMappedObject):
         else:
             pass
                 
+        self.cached = o
         return self.__table
         
     def compress(self, input: bytes, level: int = -1):
