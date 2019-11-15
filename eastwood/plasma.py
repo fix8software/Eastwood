@@ -9,7 +9,7 @@ gg,  $F    'llll$@  ,g,
 @@llll@W       #@llll$@ library for more creative purposes.
 @@ll@@F        |$@@ll$@ 
 @@@M $F        j$@"%@@@ Utils exposed:
-''`  $F        j$@  ''` ParallelAESInterface, ParallelCompressionInterface, IteratedSaltedHash
+''`  $F        j$@  ''` ParallelEncryptionInterface, ParallelCompressionInterface, IteratedSaltedHash
      #@gggggggg@@@      Khaki, StaticKhaki, ThreadedModPseudoRandRestrictedRand
        "*******f^^       
     
@@ -42,7 +42,7 @@ import dill
 from typing import Dict, List
 
 # These are the only classes that ought to be used with Plasma publicly.
-__all__ = ["ThreadedEncryptionInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki", "XOR", "Mursha27Fx43Fx2", "XChaCha20_Poly1305_Mursha27Fx43Fx2", "AESCrypt_Mursha27Fx43Fx2_IV12_NI"]
+__all__ = ["ParallelEncryptionInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki", "XOR", "Mursha27Fx43Fx2", "XChaCha20_Poly1305_Mursha27Fx43Fx2", "AESCrypt_Mursha27Fx43Fx2_IV12_NI"]
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
@@ -925,47 +925,6 @@ class ParallelEncryptionInterface(StarmapProcessMappedObject):
             enc = enc[SIZE_BYTES+chunk_length:]
 
         return b''.join(self.ParallelSequenceMapper(self._ec_d, [(self.algorithm, chunk, self.key) for chunk in chunks]))
-
-    @staticmethod
-    def __chunks(l, n):
-        for i in range(0, len(l), n):
-            yield l[i:i+n]
-
-class ThreadedEncryptionInterface(ThreadMappedObject):
-    """
-    Non-threadsafe class that automatically spawns processes for continued use.
-    """
-    def __init__(self, key: bytes, algorithm = AESCrypt_Mursha27Fx43Fx2_IV12_NI):
-        self.algorithm = algorithm(key)
-    
-    def __encapsulated_encryption(self, raw: bytes) -> bytes:
-        capsule = self.algorithm.encrypt(raw)
-
-        return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
-
-    def encrypt(self, raw: bytes) -> bytes:
-        """
-        Main encryption function.
-        Args:
-            raw: Bytes to encrypt
-        """
-        chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / self.ParallelSequenceMapperPoolSize)))))
-        chunks = self.ParallelSequenceMapper(self.__encapsulated_encryption, chunks)
-        return b''.join(chunks)
-
-    def decrypt(self, enc: bytes) -> bytes:
-        """
-        Main decryption function.
-        Args:
-            enc: Bytes to decrypt
-        """
-        chunks = []
-        while len(enc) > 0:
-            chunk_length = int.from_bytes(enc[:SIZE_BYTES], byteorder=BYTE_ORDER)
-            chunks.append(enc[SIZE_BYTES:SIZE_BYTES+chunk_length])
-            enc = enc[SIZE_BYTES+chunk_length:]
-
-        return b''.join(self.ParallelSequenceMapper(self.algorithm.decrypt, chunks))
 
     @staticmethod
     def __chunks(l, n):
