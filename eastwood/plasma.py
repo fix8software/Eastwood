@@ -42,7 +42,7 @@ import dill
 from typing import Dict, List
 
 # These are the only classes that ought to be used with Plasma publicly.
-__all__ = ["ParallelEncryptionInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki", "XOR", "Mursha27Fx43Fx2", "XChaCha20_Poly1305_Mursha27Fx43Fx2", "AESCrypt_Mursha27Fx43Fx2_IV12_NI"]
+__all__ = ["ThreadedEncryptionInterface", "ParallelCompressionInterface", "IteratedSaltedHash", "StaticKhaki", "Khaki", "XOR", "Mursha27Fx43Fx2", "XChaCha20_Poly1305_Mursha27Fx43Fx2", "AESCrypt_Mursha27Fx43Fx2_IV12_NI"]
 
 # These variables are the ones that probably won't break anything if you change them.
 # Please note that these values must be the same for both the compressor and decompressor.
@@ -868,7 +868,7 @@ class XChaCha20_Poly1305_Mursha27Fx43Fx2(_SymmetricEncryptionAlgorithm):
         cipher = ChaCha20_Poly1305.new(key = self.key, nonce = iv)
         return cipher.decrypt(enc[24:])
 
-class ParallelEncryptionInterface(ThreadMappedObject):
+class ThreadedEncryptionInterface(ThreadMappedObject):
     """
     Non-threadsafe class that automatically spawns processes for continued use.
     """
@@ -908,6 +908,11 @@ class ParallelEncryptionInterface(ThreadMappedObject):
     def __chunks(l, n):
         for i in range(0, len(l), n):
             yield l[i:i+n]
+            
+# Fallback to AES on a single process for now. It performs better
+# than the PEI system, of which doesn't really use multiple
+# processes properly at all due to ThreadPools and the GIL.
+ParallelEncryptionInterface = AESCrypt_Mursha27Fx43Fx2_IV12_NI
 
 def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, salt_length: int = 0xFF, salt_generator = token_bytes) -> tuple:
     """
@@ -990,15 +995,7 @@ def _main():
         assert DECOMPRESSED_TEST_DATA == TEST_DATA
         
     KEY = b'AverageKey'
-    EncIntf = ParallelEncryptionInterface(KEY, algorithm = XChaCha20_Poly1305_Mursha27Fx43Fx2)
-    StartTime = time.time()
-    A = EncIntf.encrypt(TEST_DATA)
-    assert EncIntf.decrypt(A) == TEST_DATA
-    print('MiB/s: {0}'.format(
-        ( len(TEST_DATA) / ( 1024 ** 2 ) ) / ( ( time.time() - StartTime ) * ( 1 ) )
-    ))
-    
-    EncIntf = ParallelEncryptionInterface(KEY, algorithm = AESCrypt_Mursha27Fx43Fx2_IV12_NI)
+    EncIntf = XChaCha20_Poly1305_Mursha27Fx43Fx2(KEY)
     StartTime = time.time()
     A = EncIntf.encrypt(TEST_DATA)
     assert EncIntf.decrypt(A) == TEST_DATA
