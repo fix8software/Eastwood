@@ -931,6 +931,9 @@ class ParallelEncryptionInterface(StarmapProcessMappedObject):
         for i in range(0, len(l), n):
             yield l[i:i+n]
             
+# Backwards compatibility
+ParallelAESInterface = ParallelEncryptionInterface
+            
 # Fallback to AES on a single process for now. It performs better
 # than the PEI system, of which doesn't really use multiple
 # processes properly at all due to ThreadPools and the GIL.
