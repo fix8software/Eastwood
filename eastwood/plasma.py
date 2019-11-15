@@ -153,6 +153,19 @@ class ProcessMappedObject(object):
         
         return object.__new__(cls)
         
+class StarmapProcessMappedObject(object):
+    __THREAD_COUNT = cpu_count()
+
+    def __init__(self):
+        super().__init__()
+
+    def __new__(cls, *args, **kwargs):
+        cls.__GLOBAL_POOL = Pool(cls.__THREAD_COUNT)
+        cls.ParallelSequenceMapper = cls.__GLOBAL_POOL.starmap
+        cls.ParallelSequenceMapperPoolSize = cls.__THREAD_COUNT
+        
+        return object.__new__(cls)
+        
 def encapsulated_byte_func(fargs: tuple) -> bytes:
     """
         This function is not important, other than it is involved with the encapsulation process
@@ -839,8 +852,12 @@ class _SymmetricEncryptionAlgorithm(object):
     This class must not be used outside of the Plasma library.
     """
 
-    def __init__(self, key: bytes):
-        self.key = Mursha27Fx43Fx2(KeyStream(key, amount = 8192))
+    def __init__(self, key: bytes, pre_compute = True):
+        self.key = (lambda x, y: key if not y else self.key_computation(key))(key, pre_compute)
+        
+    @staticmethod
+    def key_computation(key: bytes) -> bytes:
+        return Mursha27Fx43Fx2(KeyStream(key, amount = 8192))
 
 class AESCrypt_Mursha27Fx43Fx2_IV12_NI(_SymmetricEncryptionAlgorithm):
     __IV_SIZE = 12
@@ -867,6 +884,52 @@ class XChaCha20_Poly1305_Mursha27Fx43Fx2(_SymmetricEncryptionAlgorithm):
         iv = enc[:24]
         cipher = ChaCha20_Poly1305.new(key = self.key, nonce = iv)
         return cipher.decrypt(enc[24:])
+        
+class ParallelEncryptionInterface(StarmapProcessMappedObject):
+    def __init__(self, key: bytes, algorithm = AESCrypt_Mursha27Fx43Fx2_IV12_NI):
+        self.algorithm = algorithm
+        self.key = _SymmetricEncryptionAlgorithm.key_computation(key)
+        
+    @staticmethod
+    def _ec_e(a, i: bytes, k: bytes) -> bytes:
+        b = a(key = k, pre_compute = False)
+        capsule = b.encrypt(i)
+
+        return len(capsule).to_bytes(SIZE_BYTES, byteorder=BYTE_ORDER) + capsule
+        
+    @staticmethod
+    def _ec_d(a, i: bytes, k: bytes) -> bytes:
+        b = a(key = k, pre_compute = False)
+        return b.decrypt(i)
+        
+    def encrypt(self, raw: bytes) -> bytes:
+        """
+        Main encryption function.
+        Args:
+            raw: Bytes to encrypt
+        """
+        chunks = list(self.__chunks(raw, (lambda x: x if x != 0 else 1)(int(round(len(raw) / self.ParallelSequenceMapperPoolSize)))))
+        chunks = self.ParallelSequenceMapper(self._ec_e, [(self.algorithm, chunk, self.key) for chunk in chunks])
+        return b''.join(chunks)
+
+    def decrypt(self, enc: bytes) -> bytes:
+        """
+        Main decryption function.
+        Args:
+            enc: Bytes to decrypt
+        """
+        chunks = []
+        while len(enc) > 0:
+            chunk_length = int.from_bytes(enc[:SIZE_BYTES], byteorder=BYTE_ORDER)
+            chunks.append(enc[SIZE_BYTES:SIZE_BYTES+chunk_length])
+            enc = enc[SIZE_BYTES+chunk_length:]
+
+        return b''.join(self.ParallelSequenceMapper(self._ec_d, [(self.algorithm, chunk, self.key) for chunk in chunks]))
+
+    @staticmethod
+    def __chunks(l, n):
+        for i in range(0, len(l), n):
+            yield l[i:i+n]
 
 class ThreadedEncryptionInterface(ThreadMappedObject):
     """
@@ -912,7 +975,7 @@ class ThreadedEncryptionInterface(ThreadMappedObject):
 # Fallback to AES on a single process for now. It performs better
 # than the PEI system, of which doesn't really use multiple
 # processes properly at all due to ThreadPools and the GIL.
-ParallelEncryptionInterface = AESCrypt_Mursha27Fx43Fx2_IV12_NI
+# ParallelEncryptionInterface = AESCrypt_Mursha27Fx43Fx2_IV12_NI
 
 def IteratedSaltedHash(raw: bytes, salt = None, iterations: int = 0x0002FFFF, salt_length: int = 0xFF, salt_generator = token_bytes) -> tuple:
     """
@@ -993,8 +1056,18 @@ def _main():
     for _ in range(TEST_TIMES):
         DECOMPRESSED_TEST_DATA = compressor.decompress(COMPRESSED_TEST_DATA)
         assert DECOMPRESSED_TEST_DATA == TEST_DATA
-        
+    
+    print('-- Encryption Tests --')
     KEY = b'AverageKey'
+    
+    EncIntf = ParallelEncryptionInterface(KEY, algorithm = XChaCha20_Poly1305_Mursha27Fx43Fx2)
+    StartTime = time.time()
+    A = EncIntf.encrypt(TEST_DATA)
+    assert EncIntf.decrypt(A) == TEST_DATA
+    print('MiB/s: {0}'.format(
+        ( len(TEST_DATA) / ( 1024 ** 2 ) ) / ( ( time.time() - StartTime ) * ( 1 ) )
+    ))
+        
     EncIntf = XChaCha20_Poly1305_Mursha27Fx43Fx2(KEY)
     StartTime = time.time()
     A = EncIntf.encrypt(TEST_DATA)
