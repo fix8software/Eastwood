@@ -795,6 +795,19 @@ def XOR(*args: List[bytes]) -> bytes:
             
     return bytes(final)
     
+def KeyStream(key: bytes, amount: int = 4096) -> bytes:
+    f = bytes()
+    for i in range(amount):
+        a = i.to_bytes(0xFF, byteorder = BYTE_ORDER)
+        b = hashlib.sha1(key + XOR(a, key)).digest()
+        c = XOR(*[x.to_bytes(1, byteorder = BYTE_ORDER) for x in list(XOR(mmh3.hash_bytes(key + a), mmh3.hash_bytes(a + b)))], b[:1], a[:1])
+        d = XOR(mmh3.hash_bytes(a + b + c)[:1], mmh3.hash_bytes(a)[:1], b[:1])
+        e = hashlib.sha1(XOR(c, d, mmh3.hash_bytes(b)[:1], a[-1:])).digest()
+        
+        f += XOR(e[:1], e[-1:], mmh3.hash_bytes(key + a)[:1])
+        
+    return f
+    
 def Mursha27Fx43Fx2(a: bytes, i: int = 0x0027FFFF, fi: int = 0x03FF):
     """
     Mursha27Fx43Fx2
@@ -823,7 +836,7 @@ class _SymmetricEncryptionAlgorithm(object):
     """
 
     def __init__(self, key: bytes):
-        self.key = Mursha27Fx43Fx2(key)
+        self.key = Mursha27Fx43Fx2(KeyStream(key, amount = 8192))
 
 class AESCrypt_Mursha27Fx43Fx2_IV12_NI(_SymmetricEncryptionAlgorithm):
     __IV_SIZE = 12
