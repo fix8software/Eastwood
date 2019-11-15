@@ -962,7 +962,7 @@ def _main():
         colorama.init()
     globals()['DEBUG'] = True
     
-    TEST_DATA = cachedDownload(ALT_TRAINING_DATA_URL)
+    TEST_DATA = cachedDownload(TRAINING_DATA_URL)
     TEST_TIMES = 16
 
     compressor = ParallelCompressionInterface(exifdata = True, cached = False)
@@ -972,9 +972,30 @@ def _main():
         DECOMPRESSED_TEST_DATA = compressor.decompress(COMPRESSED_TEST_DATA)
         assert DECOMPRESSED_TEST_DATA == TEST_DATA
         
-    EncIntf = ParallelEncryptionInterface(TEST_DATA, algorithm = XChaCha20_Poly1305_Mursha27Fx43Fx2)
+    KEY = b'AverageKey'
+    EncIntf = ParallelEncryptionInterface(KEY, algorithm = XChaCha20_Poly1305_Mursha27Fx43Fx2)
+    StartTime = time.time()
     A = EncIntf.encrypt(TEST_DATA)
     assert EncIntf.decrypt(A) == TEST_DATA
+    print('MiB/s: {0}'.format(
+        ( len(TEST_DATA) / ( 1024 ** 2 ) ) / ( ( time.time() - StartTime ) * ( 1 ) )
+    ))
+    
+    EncIntf = ParallelEncryptionInterface(KEY, algorithm = AESCrypt_Mursha27Fx43Fx2_IV12_NI)
+    StartTime = time.time()
+    A = EncIntf.encrypt(TEST_DATA)
+    assert EncIntf.decrypt(A) == TEST_DATA
+    print('MiB/s: {0}'.format(
+        ( len(TEST_DATA) / ( 1024 ** 2 ) ) / ( ( time.time() - StartTime ) * ( 1 ) )
+    ))
+    
+    EncIntf = AESCrypt_Mursha27Fx43Fx2_IV12_NI(KEY)
+    StartTime = time.time()
+    A = EncIntf.encrypt(TEST_DATA)
+    assert EncIntf.decrypt(A) == TEST_DATA
+    print('MiB/s: {0}'.format(
+        ( len(TEST_DATA) / ( 1024 ** 2 ) ) / ( ( time.time() - StartTime ) * ( 1 ) )
+    ))
     
     print(XOR(b'exif', b'oxiffskgjwlgafsg'))
     
