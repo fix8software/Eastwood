@@ -244,9 +244,18 @@ class Khaki(object):
             return int.from_bytes(i, byteorder=BYTE_ORDER, signed = True)
 
     def to_bytes(self, i, starting_vlen: int = 1) -> bytes:
+        """
+        Convert type to bytes
+        """
+    
+        # Tidy up repeated stuff into single letter vars
+        # Marginally harder to read but a lot prettier and
+        # a lot less repetitive.
         a = self.KhakiUtility.intToBytes
         b = self.__TYPES
         c = lambda t: a(b[t])
+        d = struct.pack
+        e = self.to_bytes
     
         ready = False
         
@@ -254,36 +263,36 @@ class Khaki(object):
         while ready == False:
             try:
                 output = bytes()
-                output += self.KhakiUtility.intToBytes(vlen)
+                output += a(vlen)
             
                 if   type(i) == dict:
                     output += c('dict')
                 
                     for k, v in i.items():
-                        key = self.to_bytes(k, starting_vlen)
-                        output += self.KhakiUtility.intToBytes(len(key), vlen) + key
-                        value = self.to_bytes(v, starting_vlen)
-                        output += self.KhakiUtility.intToBytes(len(value), vlen) + value
+                        key = e(k, starting_vlen)
+                        output += a(len(key), vlen) + key
+                        value = e(v, starting_vlen)
+                        output += a(len(value), vlen) + value
                 elif type(i) == list:
                     output += c('list')
                 
                     for x in i:
-                        value = self.to_bytes(x, starting_vlen)
-                        output += self.KhakiUtility.intToBytes(len(value), vlen) + value
+                        value = e(x, starting_vlen)
+                        output += a(len(value), vlen) + value
                 elif type(i) == str:
                     output += c('str') + i.encode('utf8')
                 elif type(i) == int:
                     try:
-                        output += c('int') + struct.pack('<q', i)
+                        output += c('int') + d('<q', i)
                     except struct.error:
                         try:
-                            output += c('bint') + self.KhakiUtility.intToBytes(i, 32)
+                            output += c('bint') + a(i, 32)
                         except OverflowError:
-                            output += c('vint') + self.to_bytes(str(i), starting_vlen)
+                            output += c('vint') + e(str(i), starting_vlen)
                 elif type(i) == float:
-                    output += c('float') + struct.pack('<d', i)
+                    output += c('float') + d('<d', i)
                 elif type(i) == bool:
-                    output += c('bool') + struct.pack('<?', i)
+                    output += c('bool') + d('<?', i)
                 elif type(i) == bytes:
                     output += c('bytes') + i
                 elif i == None:
