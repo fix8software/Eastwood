@@ -246,6 +246,7 @@ class Khaki(object):
     def to_bytes(self, i, starting_vlen: int = 1) -> bytes:
         a = self.KhakiUtility.intToBytes
         b = self.__TYPES
+        c = lambda t: a(b[t])
     
         ready = False
         
@@ -256,7 +257,7 @@ class Khaki(object):
                 output += self.KhakiUtility.intToBytes(vlen)
             
                 if   type(i) == dict:
-                    output += a(b['dict'])
+                    output += c('dict')
                 
                     for k, v in i.items():
                         key = self.to_bytes(k, starting_vlen)
@@ -264,29 +265,29 @@ class Khaki(object):
                         value = self.to_bytes(v, starting_vlen)
                         output += self.KhakiUtility.intToBytes(len(value), vlen) + value
                 elif type(i) == list:
-                    output += a(b['list'])
+                    output += c('list')
                 
                     for x in i:
                         value = self.to_bytes(x, starting_vlen)
                         output += self.KhakiUtility.intToBytes(len(value), vlen) + value
                 elif type(i) == str:
-                    output += a(b['str']) + i.encode('utf8')
+                    output += c('str') + i.encode('utf8')
                 elif type(i) == int:
                     try:
-                        output += a(b['int']) + struct.pack('<q', i)
+                        output += c('int') + struct.pack('<q', i)
                     except struct.error:
                         try:
-                            output += a(b['bint']) + self.KhakiUtility.intToBytes(i, 32)
+                            output += c('bint') + self.KhakiUtility.intToBytes(i, 32)
                         except OverflowError:
-                            output += a(b['vint']) + self.to_bytes(str(i), starting_vlen)
+                            output += c('vint') + self.to_bytes(str(i), starting_vlen)
                 elif type(i) == float:
-                    output += a(b['float']) + struct.pack('<d', i)
+                    output += c('float') + struct.pack('<d', i)
                 elif type(i) == bool:
-                    output += a(b['bool']) + struct.pack('<?', i)
+                    output += c('bool') + struct.pack('<?', i)
                 elif type(i) == bytes:
-                    output += a(b['bytes']) + i
+                    output += c('bytes') + i
                 elif i == None:
-                    output += a(b['none'])
+                    output += c('none')
                 else:
                     raise self.KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
             except OverflowError:
