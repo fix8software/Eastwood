@@ -197,12 +197,12 @@ class Khaki(object):
         'list' : 0b00000001,
         'str'  : 0b00000010,
         'int'  : 0b00000011,
-        'bint' : 0b00001000,
-        'vint' : 0b00001001,
         'float': 0b00000100,
         'bool' : 0b00000101,
         'bytes': 0b00000110,
-        'none' : 0b00000111
+        'none' : 0b00000111,
+        'bint' : 0b00001000,
+        'vint' : 0b00001001
     }
 
     def dumps(self, i, compressed = True, min_value_length: int = 1) -> bytes:
