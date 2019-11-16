@@ -192,6 +192,18 @@ class Khaki(object):
     """
     Universal lightweight format for encoding and decoding primitive data
     """
+    __TYPES = {
+        'dict' : 0b00000000,
+        'list' : 0b00000001,
+        'str'  : 0b00000010,
+        'int'  : 0b00000011,
+        'bint' : 0b00001000,
+        'vint' : 0b00001001,
+        'float': 0b00000100,
+        'bool' : 0b00000101,
+        'bytes': 0b00000110,
+        'none' : 0b00000111
+    }
 
     def dumps(self, i, compressed = True, min_value_length: int = 1) -> bytes:
         """
@@ -232,6 +244,9 @@ class Khaki(object):
             return int.from_bytes(i, byteorder=BYTE_ORDER, signed = True)
 
     def to_bytes(self, i, starting_vlen: int = 1) -> bytes:
+        a = self.KhakiUtility.intToBytes
+        b = self.__TYPES
+    
         ready = False
         
         vlen = starting_vlen
@@ -241,7 +256,7 @@ class Khaki(object):
                 output += self.KhakiUtility.intToBytes(vlen)
             
                 if   type(i) == dict:
-                    output += self.KhakiUtility.intToBytes(0b00000000)
+                    output += a(b['dict'])
                 
                     for k, v in i.items():
                         key = self.to_bytes(k, starting_vlen)
@@ -249,29 +264,29 @@ class Khaki(object):
                         value = self.to_bytes(v, starting_vlen)
                         output += self.KhakiUtility.intToBytes(len(value), vlen) + value
                 elif type(i) == list:
-                    output += self.KhakiUtility.intToBytes(0b00000001)
+                    output += a(b['list'])
                 
                     for x in i:
                         value = self.to_bytes(x, starting_vlen)
                         output += self.KhakiUtility.intToBytes(len(value), vlen) + value
                 elif type(i) == str:
-                    output += self.KhakiUtility.intToBytes(0b00000010) + i.encode('utf8')
+                    output += a(b['str']) + i.encode('utf8')
                 elif type(i) == int:
                     try:
-                        output += self.KhakiUtility.intToBytes(0b00000011) + struct.pack('<q', i)
+                        output += a(b['int']) + struct.pack('<q', i)
                     except struct.error:
                         try:
-                            output += self.KhakiUtility.intToBytes(0b00001000) + self.KhakiUtility.intToBytes(i, 32)
+                            output += a(b['bint']) + self.KhakiUtility.intToBytes(i, 32)
                         except OverflowError:
-                            output += self.KhakiUtility.intToBytes(0b00001001) + self.to_bytes(str(i), starting_vlen)
+                            output += a(b['vint']) + self.to_bytes(str(i), starting_vlen)
                 elif type(i) == float:
-                    output += self.KhakiUtility.intToBytes(0b00000100) + struct.pack('<d', i)
+                    output += a(b['float']) + struct.pack('<d', i)
                 elif type(i) == bool:
-                    output += self.KhakiUtility.intToBytes(0b00000101) + struct.pack('<?', i)
+                    output += a(b['bool']) + struct.pack('<?', i)
                 elif type(i) == bytes:
-                    output += self.KhakiUtility.intToBytes(0b00000110) + i
+                    output += a(b['bytes']) + i
                 elif i == None:
-                    output += self.KhakiUtility.intToBytes(0b00000111)
+                    output += a(b['none'])
                 else:
                     raise self.KhakiUnknownTypeException('Cannot convert type {0}'.format(type(i)))
             except OverflowError:
@@ -287,23 +302,24 @@ class Khaki(object):
         type = self.KhakiUtility.bytesToInt(i[meta:meta*2])
         i = i[meta*2:]
         
-        if   type == 0b00001001:
+        b = self.__TYPES
+        if   type == b['vint']:
             return int(self.from_bytes(i))
-        elif type == 0b00001000:
+        elif type == b['bint']:
             return self.KhakiUtility.bytesToInt(i)
-        elif type == 0b00000111:
+        elif type == b['none']:
             return None
-        elif type == 0b00000110:
+        elif type == b['bytes']:
             return i
-        elif type == 0b00000101:
+        elif type == b['bool']:
             return struct.unpack('<?', i)[0]
-        elif type == 0b00000100:
+        elif type == b['float']:
             return struct.unpack('<d', i)[0]
-        elif type == 0b00000011:
+        elif type == b['int']:
             return struct.unpack('<q', i)[0]
-        elif type == 0b00000010:
+        elif type == b['str']:
             return i.decode('utf8')
-        elif type == 0b00000001:
+        elif type == b['list']:
             data = []
         
             while len(i) > 0:
@@ -312,7 +328,7 @@ class Khaki(object):
                 i = i[size+vlen:]
             
             return data
-        elif type == 0b00000000:
+        elif type == b['dict']:
             data = {}
         
             while len(i) > 0:
